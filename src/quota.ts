@@ -4,6 +4,7 @@
  */
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { Text } from "@earendil-works/pi-tui";
 
 import {
 	ANTIGRAVITY_ENDPOINT_FALLBACKS,
@@ -805,6 +806,18 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 			query: Type.String({ description: "Search query" }),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "URLs to analyze" })),
 		}),
+		renderCall(args: any, theme: any, context: any) {
+			const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+			let content = theme.fg("toolTitle", theme.bold("antigravity_search "));
+			if (args?.query) {
+				content += theme.fg("accent", `"${args.query}"`);
+			}
+			if (args?.urls?.length) {
+				content += " " + theme.fg("dim", `(${args.urls.length} URLs)`);
+			}
+			text.setText(content);
+			return text;
+		},
 		async execute(_toolCallId, params, signal, onUpdate) {
 			onUpdate?.({
 				content: [{ type: "text", text: `Searching Google for: "${params.query}"...` }],
