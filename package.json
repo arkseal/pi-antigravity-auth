@@ -1,6 +1,6 @@
 {
   "name": "pi-antigravity-auth",
-  "version": "0.1.0",
+  "version": "1.9.0",
   "description": "Google Antigravity OAuth provider for pi - access Gemini 3 and Claude models with your Google account",
   "type": "module",
   "license": "MIT",
@@ -17,20 +17,27 @@
     "node": ">=20.0.0"
   },
   "pi": {
-    "extensions": ["./index.ts"]
+    "extensions": [
+      "./index.ts"
+    ]
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "tsx test/smoke.ts && tsx test/stream-mock.ts"
+    "test": "tsx test/smoke.ts && tsx test/stream-mock.ts && tsx test/comprehensive.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",
-    "@earendil-works/pi-coding-agent": "*"
+    "@earendil-works/pi-coding-agent": "*",
+    "pi-sidebar-tui": ">=1.7.0"
+  },
+  "dependencies": {
+    "proper-lockfile": "^4.1.2"
   },
   "devDependencies": {
     "@earendil-works/pi-ai": "*",
     "@earendil-works/pi-coding-agent": "*",
     "@types/node": "^24.0.0",
+    "@types/proper-lockfile": "^4.1.4",
     "tsx": "^4.0.0",
     "typescript": "^5.0.0"
   }

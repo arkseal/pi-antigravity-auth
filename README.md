@@ -1,29 +1,35 @@
 # pi-antigravity-auth
 
-Google Antigravity OAuth provider for [pi](https://pi.dev) — authenticate against **Antigravity** (Google's IDE backend, a.k.a. Cloud Code Assist) so you can use your Google account's Antigravity quota to run models like `claude-opus-4-6-thinking`, `gemini-3.1-pro` and the Gemini 3.x Flash family.
+Google Antigravity OAuth provider for [pi](https://pi.dev) — authenticate against **Antigravity** (Google's IDE backend, a.k.a. Cloud Code Assist) so you can use your Google account's Antigravity quota to run models like `claude-opus-4-6-thinking`, `gemini-3.8-flash`, `gemini-3.1-pro` and the Gemini 3.x family.
 
-This is a port of [`opencode-antigravity-auth-updated`](https://github.com/insign/opencode-antigravity-auth-updated) to pi's extension/provider system.
+Complete port of [`opencode-antigravity-auth-updated`](https://github.com/insign/opencode-antigravity-auth-updated) to pi's native extension, provider, and tool systems.
 
 > [!CAUTION]
 > Using this plugin violates Google's Terms of Service. Users have reported accounts being banned or shadow-banned.
 > By using it you acknowledge this is unofficial, not endorsed by Google, and that you assume all risks.
 
-## What You Get
+## Features
 
-- **Claude Opus 4.6 (thinking), Sonnet 4.6** and **Gemini 3.x Pro/Flash** via Google OAuth
-- **Multi-account support** — add multiple Google accounts; automatic rotation when rate-limited (429-aware, honors server-provided reset delays)
-- **Thinking models** — maps pi's thinking levels (`minimal`…`max`) to each model's native thinking config
-- **Thought-signature safety** — replays Gemini/Claude thought signatures across turns; falls back to the officially supported `skip_thought_signature_validator` sentinel when signatures are missing
-- **Tool calling** — full function-calling support with Antigravity-compatible name sanitization (round-trips back to real tool names)
-- **Images** — image inputs in user messages and tool results
+- **Latest Models** — Claude Opus 4.6 (Thinking), Claude Sonnet 4.6, Gemini 3.8 Flash, Gemini 3.7 Flash, Gemini 3.6 Flash, Gemini 3.5 Flash, Gemini 3.1 Pro, Gemini 3 Flash, Gemini 2.5 Flash, Gemini 3.1 Flash Image.
+- **Dynamic Antigravity Version Fetching** — Automatically resolves the latest Antigravity version at startup (via auto-updater API and changelog fallback) to prevent "version no longer supported" errors.
+- **Device Fingerprinting** — Randomized per-account device identities (macOS/Windows platform emulation, unique IDs, version tracking) with automatic regeneration on capacity exhaustion.
+- **Health Scoring & Token Bucket Rotation** — Advanced hybrid account selection combining wellness scores, token balances, and stickiness per model family (`claude`, `gemini-antigravity`, `gemini-cli`).
+- **Storage V4 with File Locking** — Multi-process safe credentials storage using `proper-lockfile`, `0600` permissions, and automatic schema migrations.
+- **Proactive Token Refresh Queue** — Background worker refreshes expiring tokens before requests are sent to prevent latency spikes.
+- **Real-Time LaTeX to Unicode Math Formatting** — SSE stream chunk buffering (`MathStreamBuffer`) transforms LaTeX equations, arrows, relations, Greek letters, powers, subscripts, fractions, and complexity notations into clean Unicode/ASCII in the terminal.
+- **Claude Thinking Block Hardening** — Injects tool parameter hardening (`CLAUDE_TOOL_SYSTEM_INSTRUCTION`), interleaved thinking hints, `VALIDATED` mode in toolConfig, and skips invalid signatures using the officially supported `skip_thought_signature_validator` sentinel.
+- **Gemini Schema Cleaning** — Recursive OpenAPI/Gemini schema conversion (uppercase types, array items default, empty object placeholders, required property validation).
+- **Google Search Grounding** — Built-in `antigravity_search` tool for web searches with citations and source URL extraction via Gemini grounding.
+- **Quota & Rate Limit Inspection** — Check live 5-hour and weekly quotas across accounts via `/quota`, `/antigravity-quota`, or the `antigravity_quota` tool. Includes persistent TUI widget and footer status bar.
+- **Interactive Account Management** — Command `/antigravity-accounts` to list, enable/disable, verify, or remove accounts, and `/antigravity-add-account` for OAuth logins.
 
 ## Installation
 
 ```bash
-# From a local path
+# Install package into pi
 pi install /path/to/pi-antigravity-auth
 
-# Or try it without installing
+# Or run directly with extension loaded
 pi -e /path/to/pi-antigravity-auth
 ```
 
@@ -31,78 +37,65 @@ Then:
 
 1. Run `pi` and execute `/login antigravity`
 2. Complete Google sign-in in your browser
-3. Pick a model: `/model antigravity/claude-opus-4-6-thinking`
+3. Select a model: `/model antigravity/claude-opus-4-6-thinking`
 
 Or non-interactively:
 
 ```bash
-pi --model antigravity/gemini-3.1-pro:high -p "Hello!"
+pi --model antigravity/gemini-3.8-flash:high -p "Write a quicksort implementation."
 ```
 
-## Models
+## Models Catalog
 
-| Model ID | Thinking levels | Notes |
-|----------|----------------|-------|
-| `antigravity/claude-opus-4-6-thinking` | minimal → max | Claude Opus 4.6 with extended thinking |
-| `antigravity/claude-sonnet-4-6` | — | Claude Sonnet 4.6 |
-| `antigravity/gemini-3.1-pro` | low, high | Maps to `gemini-3.1-pro-low` / `gemini-pro-agent` |
-| `antigravity/gemini-3-flash` | minimal → high | |
-| `antigravity/gemini-3.5-flash` | low, high | Maps to `gemini-3.5-flash-low` / `gemini-3-flash-agent` |
-| `antigravity/gemini-3.6-flash` | minimal → high | Distinct backend ids per tier |
-| `antigravity/gemini-3.7-flash` | low → high | Backend: `gemini-3.7-flash-tiered` |
-| `antigravity/gemini-2.5-flash` | minimal → high | Numeric thinking budgets |
+| Model ID | Thinking levels | Backend Routing |
+|----------|----------------|-----------------|
+| `antigravity/claude-opus-4-6-thinking` | minimal → max | Numeric budget (2048 → 32768) |
+| `antigravity/claude-sonnet-4-6` | — | Non-thinking |
+| `antigravity/gemini-3.8-flash` | minimal → high | `gemini-3.8-flash-tiered` |
+| `antigravity/gemini-3.7-flash` | minimal → high | `gemini-3.7-flash-tiered` |
+| `antigravity/gemini-3.6-flash` | minimal → high | `gemini-3.6-flash-low/medium/high` |
+| `antigravity/gemini-3.5-flash` | minimal → high | `gemini-3.5-flash-low` / `gemini-3-flash-agent` |
+| `antigravity/gemini-3.1-pro` | low, high | `gemini-3.1-pro-low` / `gemini-pro-agent` |
+| `antigravity/gemini-3-flash` | minimal → high | `gemini-3-flash` (thinkingLevel) |
+| `antigravity/gemini-2.5-flash` | minimal → high | Numeric budget (512 → 24576) |
+| `antigravity/gemini-3.1-flash-image` | — | Image generation (aspect ratio) |
 
-Append a level with `:` to force it: `--model antigravity/gemini-3.1-pro:high`.
+Append a level with `:` to force it: `--model antigravity/gemini-3.8-flash:high`.
+
+## Commands & Tools
+
+### Slash Commands
+
+- `/quota` or `/antigravity-quota` — Open detailed quota status in an editor modal.
+  - `/quota widget` — Toggle persistent quota widget above the editor.
+  - `/quota status` — Toggle compact quota status in the footer.
+- `/antigravity-accounts` — Manage configured accounts (toggle enabled/disabled, probe verification, remove accounts, or add new accounts).
+- `/antigravity-add-account` — Launch browser OAuth flow to add another account to the pool.
+
+### Custom Tools
+
+- `antigravity_quota` — Check remaining Antigravity model quotas and rate limit cooldowns.
+- `antigravity_search` — Perform real-time Google web search and URL grounding via Gemini models.
 
 ## Multi-Account Setup
 
-Each additional Google account raises your combined quota. The plugin rotates accounts automatically when one is rate-limited (it parses the `RetryInfo` delay Google returns and skips blocked accounts until their quota resets).
+Each additional Google account multiplies your available quota. Accounts are stored in `~/.pi/agent/antigravity-accounts.json`, and the primary account is synced with `~/.pi/agent/auth.json`.
 
-Add accounts either by:
-- Running `/login antigravity` again and choosing **"Add another account"**, or
-- Answering "yes" in the prompt at the end of any login
-
-Accounts are stored in `~/.pi/agent/antigravity-accounts.json`; your primary credential lives in pi's own `~/.pi/agent/auth.json`. Delete both files and re-login for a full reset.
+When rate limits or capacity issues occur, the plugin automatically rotates to the healthiest available account with exponential backoff and jitter.
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `~/.pi/agent/auth.json` | Primary OAuth credential (managed by pi `/login`) |
-| `~/.pi/agent/antigravity-accounts.json` | Extra accounts for rotation |
+| `~/.pi/agent/antigravity-accounts.json` | Account pool (Storage V4 with fingerprints and rate-limit states) |
+| `~/.pi/agent/antigravity-logs/` | Debug logs (when `PI_ANTIGRAVITY_DEBUG=1`) |
 
-Set `PI_CODING_AGENT_DIR` to relocate both.
-
-## Troubleshooting
-
-**OAuth callback issues**
-The login flow listens on `http://localhost:51121/oauth-callback`. If that port is taken, kill the process using it (`lsof -i :51121`). On Safari, disable "HTTPS-Only Mode" or use another browser. In SSH/containers where localhost isn't reachable, the plugin falls back to manual URL pasting.
-
-**403 Permission Denied (`rising-fact-p41fc`)**
-The plugin falls back to a default project id when none can be resolved. For workspace accounts, create/select a Google Cloud project with the *Gemini for Google Cloud API* enabled, then set the project id manually in `antigravity-accounts.json`:
-
-```json
-{ "accounts": [{ "email": "you@example.com", "refreshToken": "...", "projectId": "your-project-id" }] }
-```
-
-**All accounts rate-limited**
-Wait for the reset window reported in the error, or add more accounts.
-
-**"Not authenticated"**
-Run `/login antigravity` inside pi first.
-
-## Differences from the OpenCode plugin
-
-This port deliberately implements the core value — OAuth auth, request transformation, streaming, multi-account rotation — using pi's native provider APIs instead of intercepting HTTP traffic:
-
-- No request interception or fetch patching; registers a proper custom provider via `pi.registerProvider()` with a custom `streamSimple`
-- Login integrates with pi's `/login` UI rather than a custom CLI menu
-- pi natively preserves thought signatures between turns, which eliminates most of the original's signature-repair machinery
-- Not ported: legacy Gemini CLI quota path, Gemini API-key routing (`agy_sdk`) — use pi's built-in `google` provider with `GEMINI_API_KEY` alongside if you need those — session recovery hooks, Google Search grounding tool, quota-check CLI, auto-updater
+Set `PI_CODING_AGENT_DIR` to relocate all files.
 
 ## Credits
 
-- [opencode-antigravity-auth-updated](https://github.com/insign/opencode-antigravity-auth-updated) by [@insign](https://github.com/insign), based on work by [@noefabris](https://github.com/noefabris)
+- [opencode-antigravity-auth-updated](https://github.com/insign/opencode-antigravity-auth-updated) by [@insign](https://github.com/insign) & [@noefabris](https://github.com/noefabris)
 - [opencode-gemini-auth](https://github.com/jenslys/opencode-gemini-auth) by [@jenslys](https://github.com/jenslys)
 - [CLIProxyAPI](https://github.com/router-for-me/CLIProxyAPI)
 

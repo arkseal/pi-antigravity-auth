@@ -6,6 +6,7 @@ import { convertMessages, convertTools, createToolNameMap } from "../src/convert
 import { resolveBackendModel, ANTIGRAVITY_MODELS } from "../src/models.js";
 import { parseRefreshParts, formatRefreshParts, generatePKCE } from "../src/auth.js";
 import { parseDurationToMs, extractRateLimitInfo } from "../src/ratelimit.js";
+import { formatDuration, progressBar, extractProjectId, formatQuotaReport, formatCompactQuotaWidget } from "../src/quota.js";
 
 let failures = 0;
 function check(name: string, cond: boolean, detail?: unknown) {
@@ -96,7 +97,7 @@ const tools = [
 	const decls = convertTools(toolsWithMeta as never, (real) => real);
 	const params = ((decls?.[0]?.functionDeclarations?.[0] as { parameters?: Record<string, unknown> }).parameters ?? {}) as Record<string, unknown>;
 	check("$schema stripped", !("$schema" in params), params);
-	check("default stripped in nested prop", !(params.properties as Record<string, unknown>) || !("default" in ((params.properties as Record<string, Record<string, unknown>>).q ?? {})));
+	check("const stripped in nested prop", !("const" in ((params.properties as Record<string, Record<string, unknown>>).q ?? {})));
 }
 
 // --- message conversion -----------------------------------------------------
@@ -195,6 +196,160 @@ const tools = [
 		error: { code: 429, message: "quota will reset after 45s." },
 	});
 	check("message fallback parsed", info2.retryDelayMs === 45000, info2);
+}
+
+// --- quota formatting --------------------------------------------------------
+{
+	check("formatDuration hours minutes", formatDuration(3600000 * 2 + 60000 * 30) === "2h 30m");
+	check("formatDuration days", formatDuration(86400000 * 3 + 3600000 * 4) === "3d 4h");
+	check("progressBar 100%", progressBar(100) === "[██████████] 100%");
+	check("progressBar 50%", progressBar(50) === "[█████░░░░░] 50%");
+	check("extractProjectId string", extractProjectId("my-proj") === "my-proj");
+	check("extractProjectId object", extractProjectId({ id: "proj-123" }) === "proj-123");
+
+	const report = formatQuotaReport(
+		[
+			{
+				email: "test@example.com",
+				success: true,
+				groups: [
+					{
+						displayName: "Gemini Models",
+						buckets: [
+							{
+								bucketId: "gemini-weekly",
+								displayName: "Weekly Limit",
+								window: "weekly",
+								remainingFraction: 0.9,
+								resetTime: new Date(Date.now() + 3600000 * 10).toISOString(),
+							},
+						],
+					},
+				],
+			},
+		],
+		[
+			{
+				email: "test@example.com",
+				refreshToken: "tok",
+				source: "primary",
+			},
+		],
+	);
+	check("formatQuotaReport contains Gemini Models", report.includes("Gemini Models"));
+	check("formatQuotaReport contains progress bar", report.includes("█████████░"));
+
+	const wideLines = formatCompactQuotaWidget(
+		[
+			{
+				email: "test@example.com",
+				success: true,
+				groups: [
+					{
+						displayName: "Gemini Models",
+						buckets: [
+							{
+								bucketId: "gemini-5h",
+								displayName: "Five Hour Limit",
+								window: "5h",
+								remainingFraction: 0.8,
+								resetTime: new Date(Date.now() + 3600000 * 2).toISOString(),
+							},
+							{
+								bucketId: "gemini-weekly",
+								displayName: "Weekly Limit",
+								window: "weekly",
+								remainingFraction: 0.95,
+							},
+						],
+					},
+					{
+						displayName: "Claude and GPT models",
+						buckets: [
+							{
+								bucketId: "3p-5h",
+								displayName: "Five Hour Limit",
+								window: "5h",
+								remainingFraction: 1.0,
+							},
+							{
+								bucketId: "3p-weekly",
+								displayName: "Weekly Limit",
+								window: "weekly",
+								remainingFraction: 1.0,
+							},
+						],
+					},
+				],
+			},
+		],
+		[
+			{
+				email: "test@example.com",
+				refreshToken: "tok",
+				source: "primary",
+			},
+		],
+		200,
+	);
+	check("wide widgetLines has 1 line", wideLines.length === 1, wideLines);
+	check("wide widgetLines contains both 5h and Wk", wideLines[0]!.includes("5h") && wideLines[0]!.includes("Wk"), wideLines[0]);
+
+	const narrowLines = formatCompactQuotaWidget(
+		[
+			{
+				email: "test@example.com",
+				success: true,
+				groups: [
+					{
+						displayName: "Gemini Models",
+						buckets: [
+							{
+								bucketId: "gemini-5h",
+								displayName: "Five Hour Limit",
+								window: "5h",
+								remainingFraction: 0.8,
+							},
+							{
+								bucketId: "gemini-weekly",
+								displayName: "Weekly Limit",
+								window: "weekly",
+								remainingFraction: 0.95,
+							},
+						],
+					},
+					{
+						displayName: "Claude and GPT models",
+						buckets: [
+							{
+								bucketId: "3p-5h",
+								displayName: "Five Hour Limit",
+								window: "5h",
+								remainingFraction: 1.0,
+							},
+							{
+								bucketId: "3p-weekly",
+								displayName: "Weekly Limit",
+								window: "weekly",
+								remainingFraction: 1.0,
+							},
+						],
+					},
+				],
+			},
+		],
+		[
+			{
+				email: "test@example.com",
+				refreshToken: "tok",
+				source: "primary",
+			},
+		],
+		80,
+	);
+	check("narrow widgetLines has 2 lines", narrowLines.length === 2, narrowLines);
+	check("narrow widgetLines line 1 is 5-Hour", narrowLines[0]!.includes("5-Hour"), narrowLines[0]);
+	check("narrow widgetLines line 2 is Weekly", narrowLines[1]!.includes("Weekly"), narrowLines[1]);
 }
 
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);

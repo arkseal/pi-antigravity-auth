@@ -1,45 +1,23 @@
 /**
- * Rate-limit response parsing for the Antigravity API.
- * Ported from opencode-antigravity-auth-updated/src/plugin.ts.
+ * Rate-limit utilities and re-exports.
  */
+import { parseDurationToMs } from "./logging-utils.js";
 
-/** Parse Go-style duration strings ("1h16m0.667s", "3.95s", "200ms") to ms. */
-export function parseDurationToMs(duration: string): number | null {
-	const compoundRegex = /(\d+(?:\.\d+)?)(h|m(?!s)|s|ms)/gi;
-	let totalMs = 0;
-	let matchFound = false;
-	let match = compoundRegex.exec(duration);
-	while (match !== null) {
-		matchFound = true;
-		const value = Number.parseFloat(match[1]!);
-		switch (match[2]!.toLowerCase()) {
-			case "h":
-				totalMs += value * 3600_000;
-				break;
-			case "m":
-				totalMs += value * 60_000;
-				break;
-			case "s":
-				totalMs += value * 1000;
-				break;
-			case "ms":
-				totalMs += value;
-				break;
-		}
-		match = compoundRegex.exec(duration);
-	}
-	return matchFound ? totalMs : null;
-}
+export {
+	parseDurationToMs,
+	formatWaitTime,
+	formatDuration,
+	shortEmail,
+	progressBar,
+} from "./logging-utils.js";
+
+export { parseRateLimitReason, calculateBackoffMs, type RateLimitReason } from "./accounts.js";
 
 export interface RateLimitInfo {
 	retryDelayMs: number | null;
 	message?: string;
 }
 
-/**
- * Extract retry delay information from an Antigravity error body
- * ({ error: { message, details: [...] } }).
- */
 export function extractRateLimitInfo(body: unknown): RateLimitInfo {
 	if (!body || typeof body !== "object") return { retryDelayMs: null };
 	const error = (body as { error?: unknown }).error;
@@ -71,17 +49,4 @@ export function extractRateLimitInfo(body: unknown): RateLimitInfo {
 		}
 	}
 	return { retryDelayMs: null, message };
-}
-
-/** Human-readable wait duration ("45s", "3m 20s", "2h 5m"). */
-export function formatWaitTime(ms: number): string {
-	const seconds = Math.ceil(ms / 1000);
-	if (seconds < 60) return `${seconds}s`;
-	const minutes = Math.floor(seconds / 60);
-	const remainingSeconds = seconds % 60;
-	if (minutes < 60) {
-		return remainingSeconds > 0 ? `${minutes}m ${remainingSeconds}s` : `${minutes}m`;
-	}
-	const hours = Math.floor(minutes / 60);
-	return `${hours}h ${minutes % 60}m`;
 }

@@ -2,25 +2,26 @@
  * Convert pi Context (messages + tools) into the Gemini-style `contents` /
  * `tools` format expected by the Antigravity (Cloud Code Assist) API.
  *
- * Adapted from pi-ai's google-shared.ts converter, adjusted for Antigravity:
- * - Tools use the legacy OpenAPI-style `parameters` field (required by Cloud
- *   Code Assist; it translates them to Anthropic input_schema for Claude).
- * - Function names are sanitized to Antigravity's rules and mapped back to
- *   the original pi tool names on the way out.
- * - Missing/invalid thought signatures on Claude thinking models are replaced
- *   with the officially supported "skip_thought_signature_validator" sentinel.
+ * Adapted from opencode-antigravity-auth-updated request preparation:
+ * - Tools use OpenAPI/Gemini schemas via `toGeminiSchema`
+ * - Function names sanitized to Antigravity rules and mapped back on response
+ * - Missing/foreign thought signatures on Claude thinking models replaced
+ *   with the "skip_thought_signature_validator" sentinel
+ * - Tool usage hardening & interleaved thinking hints
  */
-import { SKIP_THOUGHT_SIGNATURE } from "./constants.js";
-
-// ---------------------------------------------------------------------------
-// Basic helpers
-// ---------------------------------------------------------------------------
+import {
+	SKIP_THOUGHT_SIGNATURE,
+	CLAUDE_TOOL_SYSTEM_INSTRUCTION,
+	CLAUDE_INTERLEAVED_THINKING_HINT,
+	ANTIGRAVITY_SYSTEM_INSTRUCTION,
+} from "./constants.js";
+import { isClaudeModel, isClaudeThinkingModel } from "./model-resolver.js";
+import { toGeminiSchema } from "./transform/gemini.js";
 
 export function sanitizeSurrogates(text: string): string {
 	return text.replace(/[\uD800-\uDFFF]/g, "\uFFFD");
 }
 
-/** Thought signatures must be base64 for Google APIs (TYPE_BYTES). */
 const base64SignaturePattern = /^[A-Za-z0-9+/]+={0,2}$/;
 
 function isValidThoughtSignature(signature: string | undefined): boolean {
@@ -35,11 +36,6 @@ interface SignatureCarrier {
 	thoughtSignature?: string;
 }
 
-/**
- * Only keep signatures from the same provider/model with valid base64;
- * otherwise fall back to the skip-validation sentinel so Claude thinking
- * models don't reject replayed context outright.
- */
 function resolveThoughtSignature(
 	isSameProviderAndModel: boolean,
 	signature: string | undefined,
@@ -51,7 +47,6 @@ function resolveThoughtSignature(
 	return requireSentinelFallback ? SKIP_THOUGHT_SIGNATURE : undefined;
 }
 
-/** Models behind Cloud Code Assist that require explicit tool call IDs. */
 export function requiresToolCallId(modelId: string): boolean {
 	const geminiMajorVersion = getGeminiMajorVersion(modelId);
 	return (
@@ -87,10 +82,6 @@ function sanitizeFunctionName(name: string): string {
 	return cleaned.slice(0, MAX_FUNCTION_NAME_LENGTH);
 }
 
-/**
- * Build a bidirectional wire-name map for the given tools. Multiple tools may
- * sanitize to the same wire name; disambiguate with a numeric suffix.
- */
 export function createToolNameMap(tools: { name: string }[] | undefined): Map<string, string> {
 	const map = new Map<string, string>();
 	if (!tools) return map;
@@ -108,49 +99,11 @@ export function createToolNameMap(tools: { name: string }[] | undefined): Map<st
 }
 
 // ---------------------------------------------------------------------------
-// JSON Schema sanitization (OpenAPI 3.03 subset)
-// ---------------------------------------------------------------------------
-
-const JSON_SCHEMA_META_DECLARATIONS = new Set([
-	"$schema",
-	"$id",
-	"$anchor",
-	"$dynamicAnchor",
-	"$vocabulary",
-	"$comment",
-	"$defs",
-	"definitions",
-	"default",
-	"examples",
-	"const", // unsupported by the API; drop rather than fail
-]);
-
-type JsonSchemaLike = Record<string, unknown>;
-
-function sanitizeForOpenApi(schema: unknown): unknown {
-	if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
-		return schema;
-	}
-	const result: JsonSchemaLike = {};
-	for (const [key, value] of Object.entries(schema as JsonSchemaLike)) {
-		if (JSON_SCHEMA_META_DECLARATIONS.has(key)) continue;
-		result[key] =
-			key === "type" && typeof value === "object" && value !== null
-				? undefined // e.g. { type: { const: ... } } — drop invalid type objects
-				: sanitizeForOpenApi(value);
-	}
-	if (result.type === undefined && result.properties === undefined && result.required === undefined) {
-		result.type = "string";
-	}
-	return result;
-}
-
-// ---------------------------------------------------------------------------
 // Message conversion
 // ---------------------------------------------------------------------------
 
 type WirePart = Record<string, unknown>;
-interface WireContent {
+export interface WireContent {
 	role: "user" | "model";
 	parts: WirePart[];
 }
@@ -173,21 +126,16 @@ interface PiToolCallBlock {
 }
 type PiAssistantBlock = PiTextBlock | PiThinkingBlock | PiToolCallBlock;
 
-interface PiMessageLike {
+export interface PiMessageLike {
 	role: string;
 	content: unknown;
 	provider?: string;
 	model?: string;
-	// toolResult fields
 	toolCallId?: string;
 	toolName?: string;
 	isError?: boolean;
 }
 
-/**
- * Convert pi messages into Gemini contents. `toolNameMap` maps sanitized wire
- * names back to real names; assistant history uses the forward direction.
- */
 export function convertMessages(
 	model: { id: string; provider: string },
 	messages: PiMessageLike[],
@@ -196,7 +144,8 @@ export function convertMessages(
 ): WireContent[] {
 	const contents: WireContent[] = [];
 	const needIds = requiresToolCallId(model.id);
-	const isClaudeThinkingModel = model.id.startsWith("claude-") && model.id.includes("thinking");
+	const isClaude = isClaudeModel(model.id);
+	const isClaudeThinking = isClaudeThinkingModel(model.id);
 
 	const normalizeToolCallId = (id: string) =>
 		needIds ? id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64) : id;
@@ -209,7 +158,12 @@ export function convertMessages(
 				continue;
 			}
 			const parts: WirePart[] = [];
-			for (const item of msg.content as Array<{ type: string; text?: string; data?: string; mimeType?: string }>) {
+			for (const item of msg.content as Array<{
+				type: string;
+				text?: string;
+				data?: string;
+				mimeType?: string;
+			}>) {
 				if (item.type === "text" && item.text) {
 					parts.push({ text: sanitizeSurrogates(item.text) });
 				} else if (item.type === "image" && item.data && item.mimeType) {
@@ -226,7 +180,11 @@ export function convertMessages(
 			for (const block of blocks) {
 				if (block.type === "text") {
 					const carrier = block as PiTextBlock & SignatureCarrier;
-					const signature = resolveThoughtSignature(isSameProviderAndModel, carrier.thoughtSignature ?? carrier.textSignature, false);
+					const signature = resolveThoughtSignature(
+						isSameProviderAndModel,
+						carrier.thoughtSignature ?? carrier.textSignature,
+						false,
+					);
 					if ((!block.text || block.text.trim() === "") && !signature) continue;
 					parts.push({
 						text: sanitizeSurrogates(block.text),
@@ -237,9 +195,7 @@ export function convertMessages(
 						const signature = resolveThoughtSignature(
 							true,
 							block.thinkingSignature,
-							// Claude thinking models validate signatures around tool use;
-							// a missing one is replaced with the skip sentinel.
-							isClaudeThinkingModel,
+							isClaudeThinking,
 						);
 						if ((!block.thinking || block.thinking.trim() === "") && !signature) continue;
 						parts.push({
@@ -252,7 +208,11 @@ export function convertMessages(
 						parts.push({ text: sanitizeSurrogates(block.thinking) });
 					}
 				} else if (block.type === "toolCall") {
-					const signature = resolveThoughtSignature(isSameProviderAndModel, block.thoughtSignature, false);
+					const signature = resolveThoughtSignature(
+						isSameProviderAndModel,
+						block.thoughtSignature,
+						false,
+					);
 					parts.push({
 						functionCall: {
 							name: toWireName(block.name),
@@ -267,14 +227,26 @@ export function convertMessages(
 			if (parts.length === 0) continue;
 			contents.push({ role: "model", parts });
 		} else if (msg.role === "toolResult") {
-			const content = msg.content as Array<{ type: string; text?: string; data?: string; mimeType?: string }> | string;
-			const textContent = typeof content === "string" ? content : content.filter((c) => c.type === "text").map((c) => c.text).join("\n");
+			const content = msg.content as
+				| Array<{ type: string; text?: string; data?: string; mimeType?: string }>
+				| string;
+			const textContent =
+				typeof content === "string"
+					? content
+					: content
+							.filter((c) => c.type === "text")
+							.map((c) => c.text)
+							.join("\n");
 			const imageContent =
 				typeof content === "string"
 					? []
 					: content.filter((c) => c.type === "image" && c.data && c.mimeType);
 
-			const responseValue = textContent ? sanitizeSurrogates(textContent) : imageContent.length > 0 ? "(see attached image)" : "";
+			const responseValue = textContent
+				? sanitizeSurrogates(textContent)
+				: imageContent.length > 0
+					? "(see attached image)"
+					: "";
 			const imageParts = imageContent.map((img) => ({
 				inlineData: { mimeType: img.mimeType!, data: img.data! },
 			}));
@@ -290,7 +262,6 @@ export function convertMessages(
 				},
 			};
 
-			// All function responses must be merged into a single user turn.
 			const lastContent = contents[contents.length - 1];
 			if (lastContent?.role === "user" && lastContent.parts.some((p) => p.functionResponse)) {
 				lastContent.parts.push(functionResponsePart);
@@ -320,10 +291,6 @@ interface PiToolLike {
 	parameters?: unknown;
 }
 
-/**
- * Convert tools to Antigravity functionDeclarations using the legacy OpenAPI
- * `parameters` field (Cloud Code Assist translates these for Claude models).
- */
 export function convertTools(
 	tools: PiToolLike[],
 	toWireName: (realName: string) => string,
@@ -334,8 +301,32 @@ export function convertTools(
 			functionDeclarations: tools.map((tool) => ({
 				name: toWireName(tool.name),
 				description: tool.description ?? "",
-				parameters: sanitizeForOpenApi(tool.parameters),
+				parameters: toGeminiSchema(tool.parameters),
 			})),
 		},
 	];
+}
+
+export function buildSystemInstruction(
+	modelId: string,
+	basePrompt?: string,
+	hasTools?: boolean,
+): { parts: Array<{ text: string }> } | undefined {
+	const parts: Array<{ text: string }> = [];
+	if (basePrompt && basePrompt.trim()) {
+		parts.push({ text: basePrompt.trim() });
+	}
+
+	const isClaude = isClaudeModel(modelId);
+	const isThinking = isClaudeThinkingModel(modelId);
+
+	if (isClaude && hasTools) {
+		parts.push({ text: CLAUDE_TOOL_SYSTEM_INSTRUCTION });
+	}
+	if (isThinking && hasTools) {
+		parts.push({ text: CLAUDE_INTERLEAVED_THINKING_HINT });
+	}
+
+	if (parts.length === 0) return undefined;
+	return { parts };
 }

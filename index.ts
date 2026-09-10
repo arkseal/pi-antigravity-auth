@@ -1,19 +1,26 @@
 /**
  * pi-antigravity-auth
  *
- * Port of opencode-antigravity-auth-updated to the pi coding agent.
+ * Full port of opencode-antigravity-auth-updated to the pi coding agent.
  *
  * Registers an `antigravity` provider that authenticates against Google's
  * Antigravity (Cloud Code Assist) API via OAuth, giving access to Gemini 3.x
  * and Claude models through your Google account's Antigravity quota.
  *
- * Usage:
- *   1. Install:      pi install /path/to/pi-antigravity-auth   (or npm/git)
- *   2. Login:        run pi, then `/login antigravity`
- *   3. Pick a model: e.g. antigravity/claude-opus-4-6-thinking
- *
- * Multi-account: rerun `/login antigravity` and choose "Add another account",
- * or use `/antigravity-add-account`. Accounts rotate automatically on 429.
+ * Features:
+ *   - Full model catalog: Gemini 3.8/3.7/3.6/3.5/3.1/3-flash, Claude Opus 4.6 Thinking, Claude Sonnet 4.6, Gemini 2.5 Flash, Image Generation
+ *   - Dynamic Antigravity version fetching at startup
+ *   - Device fingerprinting with platform/arch rotation
+ *   - AccountManager with Storage V4 (proper-lockfile, permissions 0600, migrations)
+ *   - Model-family rate limit tracking (claude, gemini-antigravity, gemini-cli)
+ *   - Health scoring & token bucket hybrid rotation with sticky account selection
+ *   - Proactive background token refresh queue
+ *   - Real-time LaTeX to Unicode math formatting during SSE streaming
+ *   - Claude thinking block hardening & skip thought signature sentinels
+ *   - Gemini OpenAPI schema conversion (type uppercase, required filtering, array items)
+ *   - Google Search grounding tool (`antigravity_search`)
+ *   - Quota inspection tool (`antigravity_quota`), commands (`/quota`, `/antigravity-quota`, `/antigravity-accounts`, `/antigravity-add-account`)
+ *   - TUI persistent quota widget and status bar
  */
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import type { OAuthCredentials, OAuthLoginCallbacks } from "@earendil-works/pi-ai";
@@ -24,10 +31,13 @@ import {
 	refreshAccessToken,
 	startOAuthListener,
 } from "./src/auth.js";
-import { upsertExtraAccount } from "./src/accounts.js";
+import { getAccountManager, upsertExtraAccount } from "./src/accounts.js";
 import { ANTIGRAVITY_MODELS } from "./src/models.js";
 import { ANTIGRAVITY_API_ID, streamAntigravity } from "./src/stream.js";
 import { openBrowser } from "./src/browser.js";
+import { registerQuotaFeature, refreshCachedQuota } from "./src/quota.js";
+import { initAntigravityVersion } from "./src/version.js";
+import { createProactiveRefreshQueue } from "./src/refresh-queue.js";
 
 const PROVIDER_ID = "antigravity";
 const PROVIDER_NAME = "Google Antigravity";
@@ -91,8 +101,6 @@ async function loginAntigravity(callbacks: OAuthLoginCallbacks): Promise<OAuthCr
 		credentials = await performBrowserLogin(callbacks);
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
-		// Fall back to manual URL pasting when the local listener can't work
-		// (port taken, remote/SSH environments, timeouts).
 		if (
 			!message.includes("Timed out waiting for OAuth callback") &&
 			!message.includes("already in use")
@@ -102,24 +110,29 @@ async function loginAntigravity(callbacks: OAuthLoginCallbacks): Promise<OAuthCr
 		credentials = await performManualLogin(callbacks);
 	}
 
-	// Persist into the extension's own pool so rotation includes this account.
-	upsertExtraAccount({
+	const manager = await getAccountManager();
+	await manager.upsertAccount({
 		email: (credentials as OAuthCredentials & { email?: string }).email,
 		refreshToken: extractRefreshToken(credentials.refresh),
 		projectId: extractProjectId(credentials.refresh),
 	});
 
-	// Offer multi-account setup.
-	while ((await callbacks.onSelect({
-		message: "Antigravity account added. Add another Google account for higher combined quota?",
-		options: [
-			{ id: "yes", label: "Add another account" },
-			{ id: "no", label: "Done" },
-		],
-	})) === "yes") {
+	// Immediately refresh quota cache after login
+	refreshCachedQuota().catch(() => {});
+
+	// Offer multi-account setup
+	while (
+		(await callbacks.onSelect({
+			message: "Antigravity account added. Add another Google account for higher combined quota?",
+			options: [
+				{ id: "yes", label: "Add another account" },
+				{ id: "no", label: "Done" },
+			],
+		})) === "yes"
+	) {
 		try {
 			const extra = await performBrowserLogin(callbacks);
-			upsertExtraAccount({
+			await manager.upsertAccount({
 				email: (extra as OAuthCredentials & { email?: string }).email,
 				refreshToken: extractRefreshToken(extra.refresh),
 				projectId: extractProjectId(extra.refresh),
@@ -146,15 +159,19 @@ function extractProjectId(refresh: string): string | undefined {
 	return refresh.split("|")[1] || undefined;
 }
 
-async function refreshCredentials(credentials: OAuthCredentials, signal: AbortSignal): Promise<OAuthCredentials> {
+async function refreshCredentials(
+	credentials: OAuthCredentials,
+	signal: AbortSignal,
+): Promise<OAuthCredentials> {
 	const refreshToken = extractRefreshToken(credentials.refresh);
 	if (!refreshToken) throw new Error("No Antigravity refresh token stored.");
 
 	const refreshed = await refreshAccessToken(refreshToken, signal);
 	return {
-		refresh: refreshed.refreshToken === refreshToken
-			? credentials.refresh
-			: [refreshed.refreshToken, extractProjectId(credentials.refresh) ?? ""].join("|"),
+		refresh:
+			refreshed.refreshToken === refreshToken
+				? credentials.refresh
+				: [refreshed.refreshToken, extractProjectId(credentials.refresh) ?? ""].join("|"),
 		access: refreshed.accessToken,
 		expires: refreshed.expires,
 	};
@@ -165,6 +182,19 @@ async function refreshCredentials(credentials: OAuthCredentials, signal: AbortSi
 // ---------------------------------------------------------------------------
 
 export default function antigravityExtension(pi: ExtensionAPI) {
+	// 1. Fetch latest remote Antigravity version in background
+	initAntigravityVersion().catch(() => {});
+
+	// 2. Start proactive background token refresh queue
+	const refreshQueue = createProactiveRefreshQueue();
+	getAccountManager()
+		.then((manager) => {
+			refreshQueue.setAccountManager(manager);
+			refreshQueue.start();
+		})
+		.catch(() => {});
+
+	// 3. Register custom provider
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
 		baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
@@ -182,4 +212,11 @@ export default function antigravityExtension(pi: ExtensionAPI) {
 
 		streamSimple: streamAntigravity,
 	});
+
+	// 4. Register quota inspection, search tool, and account commands
+	registerQuotaFeature(pi, PROVIDER_ID);
 }
+
+export * from "./src/quota.js";
+export * from "./src/models.js";
+export * from "./src/math/index.js";

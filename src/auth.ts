@@ -15,10 +15,10 @@ import {
 	ANTIGRAVITY_SCOPES,
 	GEMINI_CLI_HEADERS,
 } from "./constants.js";
+import { AntigravityTokenRefreshError } from "./errors.js";
 
 // ---------------------------------------------------------------------------
-// Refresh-parts encoding (compatible with the opencode plugin's format):
-//   "<refreshToken>|<projectId>|<managedProjectId>"
+// Refresh-parts encoding: "<refreshToken>|<projectId>|<managedProjectId>"
 // ---------------------------------------------------------------------------
 
 export interface RefreshParts {
@@ -50,14 +50,13 @@ export interface OAuthTokens {
 	[key: string]: unknown;
 }
 
-/** Calculate absolute expiry timestamp with sane fallback. */
 export function calculateTokenExpiry(requestTimeMs: number, expiresInSeconds: unknown): number {
 	const seconds = typeof expiresInSeconds === "number" && expiresInSeconds > 0 ? expiresInSeconds : 3600;
 	return requestTimeMs + seconds * 1000;
 }
 
 // ---------------------------------------------------------------------------
-// PKCE (implemented with node:crypto to avoid a dependency on @openauthjs)
+// PKCE (using node:crypto)
 // ---------------------------------------------------------------------------
 
 interface PkcePair {
@@ -99,7 +98,6 @@ function decodeState(state: string): AntigravityAuthState {
 	};
 }
 
-/** Build the Antigravity OAuth authorization URL including PKCE. */
 export async function authorizeAntigravity(projectId = ""): Promise<{ url: string }> {
 	const pkce = await generatePKCE();
 
@@ -138,11 +136,6 @@ export interface OAuthListener {
 	close(): Promise<void>;
 }
 
-/**
- * Start a lightweight HTTP server listening for the OAuth redirect.
- * Falls back gracefully when the port is taken by a previous run of the same
- * login attempt (the stale server will die eventually).
- */
 export async function startOAuthListener(timeoutMs = 5 * 60 * 1000): Promise<OAuthListener> {
 	const port = Number.parseInt(redirectUri.port ?? "80", 10);
 	const origin = `${redirectUri.protocol}//${redirectUri.host}`;
@@ -240,7 +233,6 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = F
 	}
 }
 
-/** Resolve the user's cloudaicompanion project id via loadCodeAssist. */
 export async function fetchProjectID(accessToken: string): Promise<string> {
 	const errors: string[] = [];
 	const loadHeaders: Record<string, string> = {
@@ -259,7 +251,7 @@ export async function fetchProjectID(accessToken: string): Promise<string> {
 				body: JSON.stringify({
 					metadata: {
 						ideType: "ANTIGRAVITY",
-						platform: process.platform === "win32" ? "WINDOWS" : "MACOS",
+						platform: "PLATFORM_UNSPECIFIED",
 						pluginType: "GEMINI",
 					},
 				}),
@@ -301,9 +293,6 @@ interface GoogleTokenResponse {
 	refresh_token?: string;
 }
 
-/**
- * Exchange an authorization code (captured from the callback URL) for tokens.
- */
 export async function exchangeAntigravity(code: string, state: string): Promise<OAuthTokens> {
 	const { verifier, projectId } = decodeState(state);
 
@@ -344,7 +333,7 @@ export async function exchangeAntigravity(code: string, state: string): Promise<
 			email = info.email;
 		}
 	} catch {
-		// Email is optional metadata.
+		// Email is optional metadata
 	}
 
 	if (!tokenPayload.refresh_token) {
@@ -367,20 +356,6 @@ export async function exchangeAntigravity(code: string, state: string): Promise<
 	};
 }
 
-export class AntigravityTokenRefreshError extends Error {
-	constructor(
-		message: string,
-		readonly code?: string,
-	) {
-		super(message);
-		this.name = "AntigravityTokenRefreshError";
-	}
-}
-
-/**
- * Refresh an access token using a refresh token. Returns the (possibly
- * rotated) refresh token alongside the new access token.
- */
 export async function refreshAccessToken(
 	refreshToken: string,
 	signal?: AbortSignal,
