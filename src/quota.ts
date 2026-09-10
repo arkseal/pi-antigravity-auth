@@ -518,10 +518,16 @@ function panelColor(color: string, text: string): string {
 	return `${color}${text}${ANSI_RESET}`;
 }
 
-function renderQuotaBarLine(label: string, pct: number, resetStr: string, width: number): string {
-	const prefix = `   ${label.padEnd(3)} `; // 7 chars: "   5h  "
+function renderQuotaBarLine(
+	label: string,
+	pct: number,
+	resetStr: string,
+	barWidth: number,
+	showSuffix: boolean,
+): string {
+	const prefix = `   ${label.padEnd(3)} `; // 7 visible chars: "   5h  " or "   Wk  "
 	const clamped = Math.min(100, Math.max(0, pct));
-	const pctStr = `${clamped}%`.padStart(4); // 4 chars: " 85%"
+	const pctStr = `${clamped}%`.padStart(4); // 4 visible chars: " 55%" or "100%"
 
 	const severityColor = clamped > 50
 		? PANEL_COLORS.success
@@ -529,31 +535,19 @@ function renderQuotaBarLine(label: string, pct: number, resetStr: string, width:
 			? PANEL_COLORS.accent
 			: PANEL_COLORS.error;
 
-	let suffix = "";
-	if (resetStr && resetStr !== "Ready") {
-		suffix = ` · ${resetStr}`;
-	} else if (resetStr === "Ready" && width >= 38) {
-		suffix = ` · Ready`;
-	}
-
-	const rightMargin = 2;
-	const gap = 1;
-	let barWidth = width - prefix.length - pctStr.length - suffix.length - gap - rightMargin;
-
-	if (barWidth < 4 && suffix) {
-		suffix = "";
-		barWidth = width - prefix.length - pctStr.length - gap - rightMargin;
-	}
-	barWidth = Math.max(4, barWidth);
-
 	const filled = Math.round((clamped / 100) * barWidth);
 	const empty = Math.max(0, barWidth - filled);
 
 	const bar = panelColor(severityColor, "█".repeat(filled)) + panelDim("░".repeat(empty));
 	const pctColored = panelColor(severityColor, pctStr);
-	const suffixDim = suffix ? panelDim(suffix) : "";
 
-	return `${panelDim(prefix)}${bar} ${pctColored}${suffixDim}`;
+	let suffix = "";
+	if (showSuffix) {
+		const text = resetStr && resetStr !== "Ready" ? resetStr : "Ready";
+		suffix = ` · ${text}`;
+	}
+
+	return `${panelDim(prefix)}${bar} ${pctColored}${suffix ? panelDim(suffix) : ""}`;
 }
 
 export function renderQuotaSidebarPanel(width: number): string[] {
@@ -575,6 +569,15 @@ export function renderQuotaSidebarPanel(width: number): string[] {
 
 	const now = Date.now();
 	const hasMultiple = cachedResults.length > 1;
+
+	// Determine layout dimensions uniformly for all bars across all accounts
+	const prefixLen = 7; // "   5h  "
+	const pctLen = 4; // " 55%"
+	const gap = 1;
+	const rightMargin = 2;
+	const showSuffix = safeWidth >= 32;
+	const suffixBudget = showSuffix ? 10 : 0; // " · 22h 34m" or " · Ready"
+	const barWidth = Math.max(6, safeWidth - prefixLen - pctLen - suffixBudget - gap - rightMargin);
 
 	for (let i = 0; i < cachedResults.length; i++) {
 		const res = cachedResults[i]!;
@@ -608,12 +611,12 @@ export function renderQuotaSidebarPanel(width: number): string[] {
 		const cWk = findBucket(res.groups, "claude", "weekly", now);
 
 		lines.push(panelDim("  Gemini"));
-		lines.push(renderQuotaBarLine("5h", g5h.pct, g5h.resetStr, safeWidth));
-		lines.push(renderQuotaBarLine("Wk", gWk.pct, gWk.resetStr, safeWidth));
+		lines.push(renderQuotaBarLine("5h", g5h.pct, g5h.resetStr, barWidth, showSuffix));
+		lines.push(renderQuotaBarLine("Wk", gWk.pct, gWk.resetStr, barWidth, showSuffix));
 
 		lines.push(panelDim("  Claude"));
-		lines.push(renderQuotaBarLine("5h", c5h.pct, c5h.resetStr, safeWidth));
-		lines.push(renderQuotaBarLine("Wk", cWk.pct, cWk.resetStr, safeWidth));
+		lines.push(renderQuotaBarLine("5h", c5h.pct, c5h.resetStr, barWidth, showSuffix));
+		lines.push(renderQuotaBarLine("Wk", cWk.pct, cWk.resetStr, barWidth, showSuffix));
 
 		if (acc?.rateLimitResetTimes) {
 			for (const [family, resetTime] of Object.entries(acc.rateLimitResetTimes)) {
@@ -675,6 +678,14 @@ export function notifySidebarRender(): void {
 let cachedResults: AccountQuotaResult[] = [];
 let cachedAccounts: ManagedAccount[] = [];
 let isStatusActive = false;
+
+export function _setCachedQuotaForTesting(
+	results: AccountQuotaResult[],
+	accounts: ManagedAccount[],
+): void {
+	cachedResults = results;
+	cachedAccounts = accounts;
+}
 
 export async function refreshCachedQuota(): Promise<{
 	results: AccountQuotaResult[];
