@@ -30,6 +30,8 @@ import {
 	convertMessages,
 	convertTools,
 	buildSystemInstruction,
+	resolveTools,
+	resolveSystemPrompt,
 } from "./convert.js";
 import { resolveBackendModel, isClaudeModel, isClaudeThinkingModel } from "./model-resolver.js";
 import {
@@ -222,7 +224,8 @@ export function streamAntigravity(
 				);
 			}
 
-			const nameMap = createToolNameMap(context.tools);
+			const tools = resolveTools(context as never);
+			const nameMap = createToolNameMap(tools);
 			const toWireName = (realName: string): string => {
 				for (const [wire, real] of nameMap) if (real === realName) return wire;
 				return realName;
@@ -254,7 +257,8 @@ export function streamAntigravity(
 				generationConfig.temperature = options.temperature;
 			}
 
-			const thinkingRequested = Boolean(options?.reasoning);
+			const thinkingRequested =
+				Boolean(options?.reasoning) && (options?.reasoning as unknown as string) !== "off";
 			if (model.reasoning && thinkingRequested) {
 				const thinkingConfig: Record<string, unknown> = { includeThoughts: true };
 				if (resolved.thinkingLevel !== undefined) {
@@ -267,18 +271,19 @@ export function streamAntigravity(
 
 			const request: Record<string, unknown> = { contents };
 
+			const systemPrompt = resolveSystemPrompt(context as never);
 			const systemInstruction = buildSystemInstruction(
 				model.id,
-				context.systemPrompt,
-				Boolean(context.tools && context.tools.length > 0),
+				systemPrompt,
+				tools.length > 0,
 			);
 			if (systemInstruction) {
 				request.systemInstruction = systemInstruction;
 			}
 
-			if (context.tools && context.tools.length > 0) {
-				const tools = convertTools(context.tools as never, toWireName);
-				if (tools) request.tools = tools;
+			if (tools.length > 0) {
+				const convertedTools = convertTools(tools as never, toWireName);
+				if (convertedTools) request.tools = convertedTools;
 			}
 			request.generationConfig = generationConfig;
 

@@ -2,11 +2,19 @@
  * Offline smoke test for pi-antigravity-auth core logic.
  * Run: npx tsx test/smoke.ts
  */
-import { convertMessages, convertTools, createToolNameMap } from "../src/convert.js";
+import {
+	convertMessages,
+	convertTools,
+	createToolNameMap,
+	getCurrentTools,
+	getCurrentSystemPrompt,
+	resolveTools,
+	resolveSystemPrompt,
+} from "../src/convert.js";
 import { resolveBackendModel, ANTIGRAVITY_MODELS } from "../src/models.js";
 import { parseRefreshParts, formatRefreshParts, generatePKCE } from "../src/auth.js";
 import { parseDurationToMs, extractRateLimitInfo } from "../src/ratelimit.js";
-import { formatDuration, progressBar, extractProjectId, formatQuotaReport, formatCompactQuotaWidget } from "../src/quota.js";
+import { formatDuration, progressBar, extractProjectId, formatQuotaReport, formatCompactQuotaWidget, syncSearchTools } from "../src/quota.js";
 
 let failures = 0;
 function check(name: string, cond: boolean, detail?: unknown) {
@@ -350,6 +358,105 @@ const tools = [
 	check("narrow widgetLines has 2 lines", narrowLines.length === 2, narrowLines);
 	check("narrow widgetLines line 1 is 5-Hour", narrowLines[0]!.includes("5-Hour"), narrowLines[0]);
 	check("narrow widgetLines line 2 is Weekly", narrowLines[1]!.includes("Weekly"), narrowLines[1]);
+}
+
+// --- transcript resolution tests (pi >= 0.86 compatibility) ----------------
+{
+	const modernMessages = [
+		{
+			role: "system",
+			content: "Base system instructions.",
+			sections: {
+				guidelines: "- Guideline 1\n- Guideline 2",
+			},
+			toolsAdded: [
+				{ name: "read", description: "Read file", parameters: { type: "object" } },
+				{ name: "bash", description: "Run command", parameters: { type: "object" } },
+			],
+		},
+		{ role: "user", content: "first question" },
+		{
+			role: "system",
+			content: "Additional instructions.",
+			sections: {
+				guidelines: "- Updated guideline 1",
+				extra: "Extra section",
+			},
+			toolsAdded: [
+				{ name: "edit", description: "Edit file", parameters: { type: "object" } },
+			],
+			toolsRemoved: [{ name: "bash" }],
+		},
+	];
+
+	// getCurrentTools
+	const tools = getCurrentTools(modernMessages);
+	check("getCurrentTools resolves net active tools", tools.length === 2 && tools.map((t) => t.name).sort().join(",") === "edit,read", tools);
+
+	// getCurrentSystemPrompt
+	const prompt = getCurrentSystemPrompt(modernMessages);
+	check("getCurrentSystemPrompt joins content and sections",
+		prompt.includes("Base system instructions.") &&
+		prompt.includes("Additional instructions.") &&
+		prompt.includes("- Updated guideline 1") &&
+		prompt.includes("Extra section") &&
+		!prompt.includes("- Guideline 2"),
+		prompt,
+	);
+
+	// resolveTools with modern TranscriptContext
+	const resolvedModernTools = resolveTools({ messages: modernMessages });
+	check("resolveTools handles modern TranscriptContext", resolvedModernTools.length === 2, resolvedModernTools);
+
+	// resolveTools with legacy context
+	const legacyTools = [{ name: "write", description: "Write file" }];
+	const resolvedLegacyTools = resolveTools({ tools: legacyTools as never, messages: [{ role: "user", content: "hi" }] });
+	check("resolveTools handles legacy context.tools", resolvedLegacyTools.length === 1 && resolvedLegacyTools[0]?.name === "write", resolvedLegacyTools);
+
+	// resolveSystemPrompt with modern TranscriptContext
+	const resolvedModernPrompt = resolveSystemPrompt({ messages: modernMessages });
+	check("resolveSystemPrompt extracts from modern transcript", resolvedModernPrompt.includes("Base system instructions."), resolvedModernPrompt);
+
+	// resolveSystemPrompt with legacy context
+	const resolvedLegacyPrompt = resolveSystemPrompt({ systemPrompt: "Legacy prompt text." });
+	check("resolveSystemPrompt handles legacy systemPrompt", resolvedLegacyPrompt === "Legacy prompt text.", resolvedLegacyPrompt);
+
+	// convertMessages skips system messages in contents
+	const contents = convertMessages(
+		{ id: "gemini-3.8-flash", provider: "antigravity" },
+		modernMessages,
+		(n) => n,
+		(n) => n,
+	);
+	check("convertMessages skips system messages from contents", contents.length === 1 && contents[0]?.role === "user", contents);
+
+	// syncSearchTools: swaps web_search out and antigravity_search in on Antigravity models
+	let currentActive = ["read", "bash", "web_search"];
+	const mockPi = {
+		getActiveTools: () => currentActive,
+		getAllTools: () => [
+			{ name: "read" },
+			{ name: "bash" },
+			{ name: "web_search" },
+			{ name: "antigravity_search" },
+		] as any,
+		setActiveTools: (tools: string[]) => {
+			currentActive = tools;
+		},
+	};
+
+	syncSearchTools(mockPi, { provider: "antigravity" });
+	check("syncSearchTools: antigravity model drops web_search and adds antigravity_search",
+		!currentActive.includes("web_search") && currentActive.includes("antigravity_search"),
+		currentActive,
+	);
+
+	// syncSearchTools: restores web_search on non-Antigravity models
+	syncSearchTools(mockPi, { provider: "anthropic" });
+	check("syncSearchTools: non-antigravity model restores web_search",
+		currentActive.includes("web_search"),
+		currentActive,
+	);
 }
 
 console.log(failures === 0 ? "\nAll checks passed." : `\n${failures} check(s) FAILED.`);

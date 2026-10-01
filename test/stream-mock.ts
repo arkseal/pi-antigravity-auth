@@ -223,6 +223,50 @@ check("usage mapped (output includes thoughts)", done?.message?.usage?.output ==
 check("cache read mapped", done?.message?.usage?.cacheRead === 20);
 check("thinking signature retained", done?.message?.content?.[0]?.thinkingSignature === "c2lnbmF0dXJl");
 
+// --- Test 2: Modern TranscriptContext (pi >= 0.86) without context.tools or context.systemPrompt
+{
+	const modernContext = {
+		messages: [
+			{
+				role: "system",
+				content: "You are an expert coder.",
+				toolsAdded: [
+					{
+						name: "read",
+						description: "Read a file",
+						parameters: { type: "object", properties: { path: { type: "string" } }, required: ["path"] },
+					},
+					{
+						name: "bash",
+						description: "Run command",
+						parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] },
+					},
+				],
+			},
+			{ role: "user", content: "list files" },
+		],
+	} as never;
+
+	const modernEvents: any[] = [];
+	const modernStream = streamAntigravity(model, modernContext, { reasoning: "low" });
+	for await (const event of modernStream) {
+		modernEvents.push(event);
+	}
+
+	const modernReq = requests[requests.length - 1];
+	const modernInner = (modernReq?.body as any)?.request;
+	check("modern: systemInstruction extracted from transcript",
+		modernInner?.systemInstruction?.parts?.[0]?.text?.includes("You are an expert coder."));
+	check("modern: tools extracted from transcript toolsAdded",
+		modernInner?.tools?.[0]?.functionDeclarations?.length === 2 &&
+		modernInner?.tools?.[0]?.functionDeclarations?.some((f: any) => f.name === "read") &&
+		modernInner?.tools?.[0]?.functionDeclarations?.some((f: any) => f.name === "bash"));
+	check("modern: contents only has user/model messages",
+		Array.isArray(modernInner?.contents) && modernInner.contents.every((c: any) => c.role === "user" || c.role === "model"));
+	check("modern: stream completed successfully",
+		modernEvents.some((e) => e.type === "done"));
+}
+
 server.close();
 console.log(failures === 0 ? "\nStream mock test passed." : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

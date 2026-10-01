@@ -621,12 +621,14 @@ export function renderQuotaSidebarPanel(width: number): string[] {
 
 		if (acc?.rateLimitResetTimes) {
 			for (const [family, resetTime] of Object.entries(acc.rateLimitResetTimes)) {
-				const remMs = resetTime - now;
-				if (remMs > 0) {
-					lines.push(
-						panelDim("   ") +
-						panelColor(PANEL_COLORS.warning, `⚠️ ${family} cooldown: ${formatDuration(remMs)}`),
-					);
+				if (resetTime !== undefined) {
+					const remMs = resetTime - now;
+					if (remMs > 0) {
+						lines.push(
+							panelDim("   ") +
+							panelColor(PANEL_COLORS.warning, `⚠️ ${family} cooldown: ${formatDuration(remMs)}`),
+						);
+					}
 				}
 			}
 		}
@@ -727,11 +729,49 @@ export function applyWidget(_ctx: ExtensionContext) {
 	// Deprecated: Quota is now displayed natively in pi-sidebar-tui
 }
 
+export function syncSearchTools(
+	pi: Pick<ExtensionAPI, "getActiveTools" | "setActiveTools" | "getAllTools">,
+	currentModel?: { provider?: string },
+): void {
+	try {
+		if (typeof pi.getActiveTools !== "function" || typeof pi.setActiveTools !== "function") {
+			return;
+		}
+		const isAntigravity = currentModel?.provider === ANTIGRAVITY_PROVIDER_ID;
+		const activeTools = pi.getActiveTools();
+
+		if (isAntigravity) {
+			let next = activeTools;
+			if (next.includes("web_search")) {
+				next = next.filter((t: string) => t !== "web_search");
+			}
+			if (!next.includes("antigravity_search")) {
+				const all = typeof pi.getAllTools === "function" ? pi.getAllTools() : [];
+				if (all.some((t) => t.name === "antigravity_search")) {
+					next = [...next, "antigravity_search"];
+				}
+			}
+			if (next.length !== activeTools.length || next.some((t: string, i: number) => t !== activeTools[i])) {
+				pi.setActiveTools(next);
+			}
+		} else {
+			const all = typeof pi.getAllTools === "function" ? pi.getAllTools() : [];
+			const hasWebSearch = all.some((t) => t.name === "web_search");
+			if (hasWebSearch && !activeTools.includes("web_search")) {
+				pi.setActiveTools([...activeTools, "web_search"]);
+			}
+		}
+	} catch {
+		// Non-fatal if tools cannot be changed
+	}
+}
+
 export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY_PROVIDER_ID) {
 	// Register quota panel into pi-sidebar-tui
 	registerQuotaSidebarPanelWithTui();
 
 	pi.on("session_start", async (_event, ctx) => {
+		syncSearchTools(pi, ctx.model);
 		if (ctx.hasUI) {
 			if (!isSidebarTuiAvailable()) {
 				ctx.ui.notify(
@@ -757,6 +797,10 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 		if (isStatusActive) {
 			ctx.ui.setStatus("antigravity-quota", formatQuotaStatusText(results));
 		}
+	});
+
+	pi.on("model_select", async (event, _ctx) => {
+		syncSearchTools(pi, (event as { model?: { provider?: string } }).model);
 	});
 
 	// Tool: antigravity_quota
@@ -802,6 +846,11 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 		label: "Google Web Search",
 		description:
 			"Search the web using Google Search grounding via Antigravity Gemini models. Supports queries and specific URLs.",
+		promptSnippet:
+			"Search the web using Google Search grounding via Antigravity Gemini models (supports queries and specific URLs)",
+		promptGuidelines: [
+			"When running on an Antigravity model, use antigravity_search for web searches, documentation queries, and URL grounding.",
+		],
 		parameters: Type.Object({
 			query: Type.String({ description: "Search query" }),
 			urls: Type.Optional(Type.Array(Type.String(), { description: "URLs to analyze" })),

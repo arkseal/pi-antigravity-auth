@@ -151,6 +151,10 @@ export function convertMessages(
 		needIds ? id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64) : id;
 
 	for (const msg of messages) {
+		if (msg.role === "system") {
+			// System instructions are sent via request.systemInstruction for Gemini/Antigravity API.
+			continue;
+		}
 		if (msg.role === "user") {
 			if (typeof msg.content === "string") {
 				if (!msg.content) continue;
@@ -173,7 +177,11 @@ export function convertMessages(
 			if (parts.length === 0) continue;
 			contents.push({ role: "user", parts });
 		} else if (msg.role === "assistant") {
-			const blocks = (msg.content ?? []) as PiAssistantBlock[];
+			const blocks = (typeof msg.content === "string"
+				? [{ type: "text" as const, text: msg.content }]
+				: Array.isArray(msg.content)
+					? msg.content
+					: []) as PiAssistantBlock[];
 			const isSameProviderAndModel = msg.provider === model.provider && msg.model === model.id;
 			const parts: WirePart[] = [];
 
@@ -285,10 +293,110 @@ export function convertMessages(
 // Tool declaration conversion
 // ---------------------------------------------------------------------------
 
-interface PiToolLike {
+export interface PiToolLike {
 	name: string;
 	description?: string;
 	parameters?: unknown;
+}
+
+/**
+ * Extract active tools by replaying transcript system messages (pi >= 0.86).
+ * Handles toolsAdded and toolsRemoved deltas in order.
+ */
+export function getCurrentTools(
+	messages: Array<{ role: string; [key: string]: unknown }>,
+): PiToolLike[] {
+	const tools = new Map<string, PiToolLike>();
+	for (const msg of messages) {
+		if (msg.role !== "system") continue;
+		const removed = msg.toolsRemoved as Array<{ name: string }> | undefined;
+		for (const tool of removed ?? []) {
+			tools.delete(tool.name);
+		}
+		const added = msg.toolsAdded as PiToolLike[] | undefined;
+		for (const tool of added ?? []) {
+			tools.set(tool.name, tool);
+		}
+	}
+	return [...tools.values()];
+}
+
+/**
+ * Extract the full system prompt by replaying transcript system messages (pi >= 0.86).
+ * Replays base content and named prompt sections in order.
+ */
+export function getCurrentSystemPrompt(
+	messages: Array<{ role: string; [key: string]: unknown }>,
+): string {
+	const content: string[] = [];
+	const sections = new Map<string, string>();
+	for (const msg of messages) {
+		if (msg.role !== "system") continue;
+		const rawContent = msg.content;
+		const text =
+			typeof rawContent === "string"
+				? rawContent
+				: Array.isArray(rawContent)
+					? (rawContent as Array<{ type?: string; text?: string }>)
+							.filter((b) => b && b.type === "text" && typeof b.text === "string")
+							.map((b) => b.text!)
+							.join("\n")
+					: "";
+		if (text.length > 0) content.push(text);
+		const rawSections = msg.sections as Record<string, string | null> | undefined;
+		if (rawSections && typeof rawSections === "object") {
+			for (const [name, value] of Object.entries(rawSections)) {
+				if (value === null) sections.delete(name);
+				else if (typeof value === "string") sections.set(name, value);
+			}
+		}
+	}
+	const parts = [...content, ...sections.values()].filter(Boolean);
+	return parts.join("\n\n");
+}
+
+/**
+ * Resolve the tool loadout from either modern transcript system messages (pi >= 0.86)
+ * or legacy context.tools (pi <= 0.85).
+ */
+export function resolveTools(context: {
+	tools?: PiToolLike[];
+	messages?: Array<{ role: string; [key: string]: unknown }>;
+}): PiToolLike[] {
+	const messages = context.messages ?? [];
+	const hasSystemTools = messages.some(
+		(m) =>
+			m.role === "system" &&
+			(Array.isArray((m as Record<string, unknown>).toolsAdded) ||
+				Array.isArray((m as Record<string, unknown>).toolsRemoved)),
+	);
+	if (hasSystemTools) {
+		return getCurrentTools(messages);
+	}
+	if (Array.isArray(context.tools) && context.tools.length > 0) {
+		return context.tools;
+	}
+	return [];
+}
+
+/**
+ * Resolve the full system prompt from either modern transcript system messages (pi >= 0.86)
+ * or legacy context.systemPrompt (pi <= 0.85).
+ */
+export function resolveSystemPrompt(context: {
+	systemPrompt?: string;
+	messages?: Array<{ role: string; [key: string]: unknown }>;
+}): string {
+	const messages = context.messages ?? [];
+	const promptFromMessages = getCurrentSystemPrompt(messages);
+	const basePrompt = typeof context.systemPrompt === "string" ? context.systemPrompt.trim() : "";
+
+	if (basePrompt && promptFromMessages) {
+		if (promptFromMessages.includes(basePrompt)) return promptFromMessages;
+		if (basePrompt.includes(promptFromMessages)) return basePrompt;
+		return `${basePrompt}\n\n${promptFromMessages}`;
+	}
+	return promptFromMessages || basePrompt;
 }
 
 export function convertTools(
