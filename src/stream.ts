@@ -18,6 +18,7 @@ import {
 	type Context,
 	type Model,
 	type SimpleStreamOptions,
+	type ToolCall,
 } from "@earendil-works/pi-ai";
 
 import {
@@ -603,11 +604,11 @@ async function consumeStream(
 				closeCurrentBlock();
 
 				const toolCallId = functionCall.id || `${functionCall.name}_${Date.now()}_${++toolCallCounter}`;
-				const toolCall = {
-					type: "toolCall" as const,
+				const toolCall: ToolCall = {
+					type: "toolCall",
 					id: toolCallId,
 					name: toRealName(functionCall.name),
-					arguments: functionCall.args ?? {},
+					arguments: (functionCall.args ?? {}) as ToolCall["arguments"],
 					...(typeof part.thoughtSignature === "string" && part.thoughtSignature
 						? { thoughtSignature: part.thoughtSignature }
 						: {}),
