@@ -16,6 +16,7 @@ import {
 	ANTIGRAVITY_LOAD_ENDPOINTS,
 	ANTIGRAVITY_QUOTA_ENDPOINTS,
 	ANTIGRAVITY_PROVIDER_ID,
+	getAntigravityHubUserAgent,
 } from "./constants.js";
 import {
 	getAccountManager,
@@ -87,7 +88,7 @@ export async function loadCodeAssist(accessToken: string): Promise<LoadCodeAssis
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
-					"User-Agent": "antigravity",
+					"User-Agent": getAntigravityHubUserAgent(),
 				},
 				body: JSON.stringify({ metadata: CLOUDCODE_METADATA }),
 			});
@@ -121,7 +122,7 @@ export async function fetchUserQuotaSummary(
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
-					"User-Agent": "antigravity",
+					"User-Agent": getAntigravityHubUserAgent(),
 				},
 				body: JSON.stringify(payload),
 			});
@@ -182,7 +183,7 @@ export async function fetchLiveModelQuotas(
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
-					"User-Agent": "antigravity",
+					"User-Agent": getAntigravityHubUserAgent(),
 				},
 				body: JSON.stringify(projectId ? { project: projectId } : {}),
 			});

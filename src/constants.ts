@@ -82,6 +82,12 @@ export function setAntigravityVersion(version: string): void {
 /** @deprecated Use getAntigravityVersion() for runtime access. */
 export const ANTIGRAVITY_VERSION = ANTIGRAVITY_VERSION_FALLBACK;
 
+export function getAntigravityHubUserAgent(): string {
+	const osType = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
+	const arch = process.arch === "arm64" ? "arm64" : "amd64";
+	return `antigravity/hub/2.12.0 (aidev_client; os_type=${osType}; arch=${arch}; cl=975213627)`;
+}
+
 export interface HeaderSet {
 	"User-Agent": string;
 	"X-Goog-Api-Client"?: string;
