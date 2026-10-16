@@ -2,6 +2,10 @@
  * Quota inspection & Account Management for Google Antigravity.
  * Ported from opencode-antigravity-auth-updated.
  */
+import https from "node:https";
+import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { Type } from "typebox";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -219,12 +223,102 @@ export async function fetchLiveModelQuotas(
 	return {};
 }
 
+export interface LocalLanguageServerInfo {
+	port: number;
+	csrfToken: string;
+}
+
+export function getLocalLanguageServerInfo(): LocalLanguageServerInfo | null {
+	const possiblePaths = [
+		join(homedir(), ".config", "Antigravity", "logs", "main.log"),
+		join(homedir(), "Library", "Application Support", "Antigravity", "logs", "main.log"),
+		join(process.env.APPDATA || join(homedir(), "AppData", "Roaming"), "Antigravity", "logs", "main.log"),
+	];
+
+	for (const p of possiblePaths) {
+		if (!existsSync(p)) continue;
+		try {
+			const content = readFileSync(p, "utf-8");
+			const spawnMatches = [...content.matchAll(/--csrf_token\s+([a-f0-9-]+)/g)];
+			const portMatches = [...content.matchAll(/Local:\s+https?:\/\/127\.0\.0\.1:(\d+)\//g)];
+			if (spawnMatches.length > 0 && portMatches.length > 0) {
+				const csrfToken = spawnMatches[spawnMatches.length - 1]![1]!;
+				const port = parseInt(portMatches[portMatches.length - 1]![1]!, 10);
+				return { port, csrfToken };
+			}
+		} catch {
+			// Ignore read errors
+		}
+	}
+	return null;
+}
+
+export function fetchLocalLanguageServerQuota(
+	serverInfo?: LocalLanguageServerInfo | null,
+): Promise<UserQuotaSummaryResponse | null> {
+	const info = serverInfo ?? getLocalLanguageServerInfo();
+	if (!info) return Promise.resolve(null);
+
+	return new Promise((resolve) => {
+		const postData = JSON.stringify({ forceRefresh: true });
+		const req = https.request(
+			{
+				hostname: "127.0.0.1",
+				port: info.port,
+				path: "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary",
+				method: "POST",
+				rejectUnauthorized: false,
+				headers: {
+					"Content-Type": "application/json",
+					"X-Codeium-Csrf-Token": info.csrfToken,
+					"Content-Length": Buffer.byteLength(postData),
+				},
+				timeout: 1500,
+			},
+			(res) => {
+				let body = "";
+				res.on("data", (chunk) => {
+					body += chunk;
+				});
+				res.on("end", () => {
+					try {
+						const data = JSON.parse(body) as { response?: UserQuotaSummaryResponse } & UserQuotaSummaryResponse;
+						resolve(data.response || data);
+					} catch {
+						resolve(null);
+					}
+				});
+			},
+		);
+		req.on("error", () => resolve(null));
+		req.on("timeout", () => {
+			req.destroy();
+			resolve(null);
+		});
+		req.write(postData);
+		req.end();
+	});
+}
+
 export async function fetchAccountQuota(
 	account: ManagedAccount,
 	accessToken: string,
 ): Promise<AccountQuotaResult> {
 	const accountLabel = account.email || `account #${account.index + 1}`;
 	try {
+		// 1. If official Antigravity IDE language server is active locally, fetch official live quota
+		try {
+			const localQuota = await fetchLocalLanguageServerQuota();
+			if (localQuota?.groups && localQuota.groups.length > 0) {
+				return {
+					email: accountLabel,
+					success: true,
+					groups: localQuota.groups,
+				};
+			}
+		} catch {
+			// Fallback to cloud API
+		}
 		let projectId = account.projectId ?? account.managedProjectId;
 		if (!projectId) {
 			try {

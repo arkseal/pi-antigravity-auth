@@ -8,6 +8,8 @@ import {
 	_setCachedQuotaForTesting,
 	fetchUserQuotaSummary,
 	fetchLiveModelQuotas,
+	getLocalLanguageServerInfo,
+	fetchLocalLanguageServerQuota,
 } from "../src/quota.js";
 
 test("isSidebarTuiAvailable returns boolean", () => {
@@ -252,5 +254,20 @@ test("fetchUserQuotaSummary returns immediately when prod has both Gemini and Cl
 		assert.equal(res.groups?.length, 2);
 	} finally {
 		globalThis.fetch = originalFetch;
+	}
+});
+
+test("fetchLocalLanguageServerQuota handles invalid server info gracefully", async () => {
+	const res = await fetchLocalLanguageServerQuota({ port: 1, csrfToken: "invalid" });
+	assert.equal(res, null);
+});
+
+test("getLocalLanguageServerInfo returns null or valid port object", () => {
+	const info = getLocalLanguageServerInfo();
+	if (info) {
+		assert.equal(typeof info.port, "number");
+		assert.equal(typeof info.csrfToken, "string");
+	} else {
+		assert.equal(info, null);
 	}
 });

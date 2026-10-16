@@ -13,7 +13,7 @@ import { join } from "node:path";
 
 import { loadAccounts, getStoragePath } from "../src/storage.js";
 import { refreshAccessToken } from "../src/auth.js";
-import { loadCodeAssist, extractProjectId, fetchUserQuotaSummary } from "../src/quota.js";
+import { loadCodeAssist, extractProjectId, fetchUserQuotaSummary, fetchLocalLanguageServerQuota, type QuotaGroup } from "../src/quota.js";
 import {
 	ANTIGRAVITY_ENDPOINT_PROD,
 	ANTIGRAVITY_DEFAULT_PROJECT_ID,
@@ -108,8 +108,19 @@ async function main() {
 			}
 			console.log(`  Project: ${projectId}\n`);
 
-			const quotaData = await fetchUserQuotaSummary(accessToken, projectId);
-			const groups = quotaData.groups || [];
+			let groups: QuotaGroup[] = [];
+			try {
+				const localQuota = await fetchLocalLanguageServerQuota();
+				if (localQuota?.groups && localQuota.groups.length > 0) {
+					groups = localQuota.groups;
+					console.log("  Source: Live Antigravity Language Server\n");
+				}
+			} catch {}
+
+			if (groups.length === 0) {
+				const quotaData = await fetchUserQuotaSummary(accessToken, projectId);
+				groups = quotaData.groups || [];
+			}
 
 			if (groups.length === 0) {
 				console.log("  No quota groups returned by API.");
