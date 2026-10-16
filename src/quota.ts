@@ -310,6 +310,11 @@ export async function fetchAccountQuota(
 		try {
 			const localQuota = await fetchLocalLanguageServerQuota();
 			if (localQuota?.groups && localQuota.groups.length > 0) {
+				// Cache authoritative groups on account for when IDE is closed
+				account.cachedQuota = {
+					groups: localQuota.groups,
+					updatedAt: Date.now(),
+				};
 				return {
 					email: accountLabel,
 					success: true,
@@ -335,6 +340,10 @@ export async function fetchAccountQuota(
 		// Enrich groups with live 5-hour quota from fetchAvailableModels
 		try {
 			const liveQuotas = await fetchLiveModelQuotas(accessToken, projectId);
+			const cachedGroups = (account.cachedQuota as any)?.groups as QuotaGroup[] | undefined;
+			const cachedGeminiGroup = cachedGroups?.find((g) => g.displayName.toLowerCase().includes("gemini"));
+			const cachedWeeklyBucket = cachedGeminiGroup?.buckets.find((b) => (b.bucketId || "").includes("weekly") || (b.window || "").includes("weekly"));
+
 			if (liveQuotas.gemini) {
 				const geminiGroup = groups.find((g: QuotaGroup) => g.displayName.toLowerCase().includes("gemini"));
 				if (geminiGroup) {
@@ -349,6 +358,14 @@ export async function fetchAccountQuota(
 							b5h.resetTime = liveQuotas.gemini.resetTime;
 						}
 					}
+					// If we have cached weekly reset info from language server, preserve it
+					if (cachedWeeklyBucket) {
+						const bWk = geminiGroup.buckets.find((b: QuotaBucket) => (b.bucketId || "").includes("weekly") || (b.window || "").includes("weekly"));
+						if (bWk) {
+							bWk.remainingFraction = cachedWeeklyBucket.remainingFraction;
+							if (cachedWeeklyBucket.resetTime) bWk.resetTime = cachedWeeklyBucket.resetTime;
+						}
+					}
 				} else {
 					groups.unshift({
 						displayName: "Gemini Models",
@@ -357,7 +374,8 @@ export async function fetchAccountQuota(
 								bucketId: "gemini-weekly",
 								displayName: "Weekly Limit",
 								window: "weekly",
-								remainingFraction: 1.0,
+								remainingFraction: cachedWeeklyBucket?.remainingFraction ?? 0.95,
+								resetTime: cachedWeeklyBucket?.resetTime,
 							},
 							{
 								bucketId: "gemini-5h",
