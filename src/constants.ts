@@ -24,6 +24,8 @@ export const ANTIGRAVITY_REDIRECT_URI = "http://localhost:51121/oauth-callback";
 /**
  * Root endpoints for the Antigravity API (daily sandbox first, prod fallback).
  */
+export const ANTIGRAVITY_ENDPOINT_DIRECT =
+	"https://daily-cloudcode-pa.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_DAILY =
 	"https://daily-cloudcode-pa.sandbox.googleapis.com";
 export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
@@ -36,11 +38,13 @@ export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
 /** Endpoint order for project discovery (prod first). */
 export const ANTIGRAVITY_LOAD_ENDPOINTS = [
 	ANTIGRAVITY_ENDPOINT_PROD,
+	ANTIGRAVITY_ENDPOINT_DIRECT,
 	ANTIGRAVITY_ENDPOINT_DAILY,
 ] as const;
 
-/** Endpoint order for user quota inspection (prod first as prod contains full Gemini & Claude quotas). */
+/** Endpoint order for user quota inspection (direct/prod first as they contain full Gemini & Claude quotas). */
 export const ANTIGRAVITY_QUOTA_ENDPOINTS = [
+	ANTIGRAVITY_ENDPOINT_DIRECT,
 	ANTIGRAVITY_ENDPOINT_PROD,
 	ANTIGRAVITY_ENDPOINT_DAILY,
 ] as const;

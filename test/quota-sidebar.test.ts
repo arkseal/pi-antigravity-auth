@@ -7,6 +7,7 @@ import {
 	notifySidebarRender,
 	_setCachedQuotaForTesting,
 	fetchUserQuotaSummary,
+	fetchLiveModelQuotas,
 } from "../src/quota.js";
 
 test("isSidebarTuiAvailable returns boolean", () => {
@@ -153,6 +154,19 @@ test("fetchUserQuotaSummary merges groups across endpoints and queries prod firs
 	const calls: string[] = [];
 	globalThis.fetch = (async (url: any) => {
 		calls.push(String(url));
+		if (String(url).includes("daily-cloudcode-pa.googleapis.com")) {
+			return new Response(
+				JSON.stringify({
+					groups: [
+						{
+							displayName: "Claude and GPT models",
+							buckets: [{ bucketId: "3p-weekly", displayName: "Weekly Limit", remainingFraction: 0.99 }],
+						},
+					],
+				}),
+				{ status: 200 },
+			);
+		}
 		if (String(url).includes("cloudcode-pa.googleapis.com")) {
 			return new Response(
 				JSON.stringify({
@@ -166,30 +180,44 @@ test("fetchUserQuotaSummary merges groups across endpoints and queries prod firs
 				{ status: 200 },
 			);
 		}
-		if (String(url).includes("daily-cloudcode-pa.sandbox.googleapis.com")) {
-			return new Response(
-				JSON.stringify({
-					groups: [
-						{
-							displayName: "Claude and GPT models",
-							buckets: [{ bucketId: "3p-weekly", displayName: "Weekly Limit", remainingFraction: 0.99 }],
-						},
-					],
-				}),
-				{ status: 200 },
-			);
-		}
 		return new Response("Not found", { status: 404 });
 	}) as typeof fetch;
 
 	try {
 		const res = await fetchUserQuotaSummary("fake-token");
 		assert.equal(calls.length, 2);
-		assert.ok(calls[0]!.includes("cloudcode-pa.googleapis.com"));
-		assert.ok(calls[1]!.includes("daily-cloudcode-pa.sandbox.googleapis.com"));
+		assert.ok(calls[0]!.includes("daily-cloudcode-pa.googleapis.com"));
+		assert.ok(calls[1]!.includes("cloudcode-pa.googleapis.com"));
 		assert.equal(res.groups?.length, 2);
 		assert.ok(res.groups?.some((g) => g.displayName === "Gemini Models"));
 		assert.ok(res.groups?.some((g) => g.displayName === "Claude and GPT models"));
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
+});
+
+test("fetchLiveModelQuotas parses model-level quotaInfo from fetchAvailableModels", async () => {
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async (_url: any) => {
+		return new Response(
+			JSON.stringify({
+				models: {
+					"gemini-3.8-flash-tiered": {
+						quotaInfo: { remainingFraction: 0.85, resetTime: "2026-10-16T05:22:45Z" },
+					},
+					"claude-sonnet-5-5-high": {
+						quotaInfo: { remainingFraction: 1.0, resetTime: "2026-10-16T05:26:33Z" },
+					},
+				},
+			}),
+			{ status: 200 },
+		);
+	}) as typeof fetch;
+
+	try {
+		const res = await fetchLiveModelQuotas("fake-token");
+		assert.equal(res.gemini?.remainingFraction, 0.85);
+		assert.equal(res.claude?.remainingFraction, 1.0);
 	} finally {
 		globalThis.fetch = originalFetch;
 	}

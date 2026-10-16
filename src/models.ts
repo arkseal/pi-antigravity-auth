@@ -8,7 +8,8 @@ export type { ThinkingTier, ResolvedBackendModel } from "./model-resolver.js";
 export { resolveBackendModel, getModelFamily, isClaudeModel, isClaudeThinkingModel, isImageGenerationModel } from "./model-resolver.js";
 
 const GEMINI_LIMITS = { context: 1_048_576, output: 65_536 };
-const CLAUDE_LIMITS = { context: 200_000, output: 64_000 };
+const CLAUDE_LIMITS = { context: 1_000_000, output: 128_000 };
+const GPT_OSS_LIMITS = { context: 131_072, output: 32_768 };
 const FREE_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
 
 export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
@@ -81,13 +82,30 @@ export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
 		},
 	},
 	{
+		id: "gemini-3.5-flash-lite",
+		name: "Gemini 3.5 Flash Lite (Antigravity)",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: FREE_COST,
+		contextWindow: GEMINI_LIMITS.context,
+		maxTokens: GEMINI_LIMITS.output,
+		thinkingLevelMap: {
+			minimal: "low",
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: null,
+			max: null,
+		},
+	},
+	{
 		id: "gpt-oss-120b",
 		name: "GPT-OSS 120B (Antigravity)",
 		reasoning: false,
 		input: ["text", "image"],
 		cost: FREE_COST,
-		contextWindow: GEMINI_LIMITS.context,
-		maxTokens: GEMINI_LIMITS.output,
+		contextWindow: GPT_OSS_LIMITS.context,
+		maxTokens: GPT_OSS_LIMITS.output,
 	},
 	{
 		id: "gemini-3.1-flash-image",

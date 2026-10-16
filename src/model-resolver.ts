@@ -179,6 +179,15 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 		return { model: GEMINI_36_FLASH_LOW_MODEL, thinkingLevel: "low" };
 	}
 
+	// Gemini 3.5 Flash Lite
+	if (/^gemini-3\.5-flash-lite/i.test(lower)) {
+		const level = normalizeThinkingLevel(reasoning ?? "low");
+		return {
+			model: "gemini-3.5-flash-lite",
+			thinkingLevel: level === "minimal" ? "low" : level,
+		};
+	}
+
 	// Gemini 3.5 Flash
 	if (GEMINI_35_FLASH_REGEX.test(lower)) {
 		const level = normalizeThinkingLevel(reasoning ?? "low");

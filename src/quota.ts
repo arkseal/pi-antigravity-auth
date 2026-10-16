@@ -161,6 +161,64 @@ export async function fetchUserQuotaSummary(
 	throw new Error(`retrieveUserQuotaSummary failed (${lastStatus || 500})`);
 }
 
+export interface AvailableModelQuota {
+	gemini?: { remainingFraction: number; resetTime?: string };
+	claude?: { remainingFraction: number; resetTime?: string };
+}
+
+export async function fetchLiveModelQuotas(
+	accessToken: string,
+	projectId?: string,
+): Promise<AvailableModelQuota> {
+	const endpoints = ANTIGRAVITY_QUOTA_ENDPOINTS;
+	for (const endpoint of endpoints) {
+		try {
+			const res = await fetch(`${endpoint}/v1internal:fetchAvailableModels`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${accessToken}`,
+					"Content-Type": "application/json",
+					"User-Agent": "antigravity",
+				},
+				body: JSON.stringify(projectId ? { project: projectId } : {}),
+			});
+			if (!res.ok) continue;
+			const data = (await res.json()) as {
+				models?: Record<string, { quotaInfo?: { remainingFraction?: number; resetTime?: string } }>;
+			};
+			const models = data.models || {};
+			const geminiModel =
+				models["gemini-3.8-flash-tiered"] ||
+				models["gemini-3-flash"] ||
+				models["gemini-3.5-flash-lite"] ||
+				models["gemini-2.5-flash"];
+			const claudeModel =
+				models["claude-sonnet-5-5-high"] ||
+				models["claude-opus-5-5-high"] ||
+				models["claude-sonnet-5-5-medium"];
+			const result: AvailableModelQuota = {};
+			if (geminiModel?.quotaInfo && typeof geminiModel.quotaInfo.remainingFraction === "number") {
+				result.gemini = {
+					remainingFraction: geminiModel.quotaInfo.remainingFraction,
+					resetTime: geminiModel.quotaInfo.resetTime,
+				};
+			}
+			if (claudeModel?.quotaInfo && typeof claudeModel.quotaInfo.remainingFraction === "number") {
+				result.claude = {
+					remainingFraction: claudeModel.quotaInfo.remainingFraction,
+					resetTime: claudeModel.quotaInfo.resetTime,
+				};
+			}
+			if (result.gemini || result.claude) {
+				return result;
+			}
+		} catch {
+			// Try next endpoint
+		}
+	}
+	return {};
+}
+
 export async function fetchAccountQuota(
 	account: ManagedAccount,
 	accessToken: string,
@@ -178,10 +236,67 @@ export async function fetchAccountQuota(
 		}
 
 		const quotaResponse = await fetchUserQuotaSummary(accessToken, projectId);
+		const groups: QuotaGroup[] = quotaResponse.groups ? JSON.parse(JSON.stringify(quotaResponse.groups)) : [];
+
+		// Enrich groups with live 5-hour quota from fetchAvailableModels
+		try {
+			const liveQuotas = await fetchLiveModelQuotas(accessToken, projectId);
+			if (liveQuotas.gemini) {
+				const geminiGroup = groups.find((g: QuotaGroup) => g.displayName.toLowerCase().includes("gemini"));
+				if (geminiGroup) {
+					const b5h = geminiGroup.buckets.find((b: QuotaBucket) =>
+						(b.bucketId || "").includes("5h") ||
+						(b.window || "").includes("5h") ||
+						(b.displayName || "").toLowerCase().includes("5"),
+					);
+					if (b5h) {
+						b5h.remainingFraction = liveQuotas.gemini.remainingFraction;
+						if (liveQuotas.gemini.resetTime) {
+							b5h.resetTime = liveQuotas.gemini.resetTime;
+						}
+					}
+				} else {
+					groups.unshift({
+						displayName: "Gemini Models",
+						buckets: [
+							{
+								bucketId: "gemini-weekly",
+								displayName: "Weekly Limit",
+								window: "weekly",
+								remainingFraction: 1.0,
+							},
+							{
+								bucketId: "gemini-5h",
+								displayName: "Five Hour Limit",
+								window: "5h",
+								remainingFraction: liveQuotas.gemini.remainingFraction,
+								resetTime: liveQuotas.gemini.resetTime,
+							},
+						],
+					});
+				}
+			}
+			if (liveQuotas.claude) {
+				const claudeGroup = groups.find((g: QuotaGroup) => g.displayName.toLowerCase().includes("claude"));
+				if (claudeGroup) {
+					const b5h = claudeGroup.buckets.find((b: QuotaBucket) =>
+						(b.bucketId || "").includes("5h") ||
+						(b.window || "").includes("5h") ||
+						(b.displayName || "").toLowerCase().includes("5"),
+					);
+					if (b5h && liveQuotas.claude.resetTime) {
+						b5h.resetTime = liveQuotas.claude.resetTime;
+					}
+				}
+			}
+		} catch {
+			// Non-fatal if live model quota enrichment fails
+		}
+
 		return {
 			email: accountLabel,
 			success: true,
-			groups: quotaResponse.groups || [],
+			groups,
 		};
 	} catch (error) {
 		return {

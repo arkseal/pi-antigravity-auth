@@ -63,6 +63,8 @@ function check(name: string, cond: boolean, detail?: unknown) {
 	check("gemini 3.7 flash tiered", r9.model === "gemini-3.7-flash-tiered" && r9.thinkingLevel === "low", r9);
 	const r10 = resolveBackendModel("gemini-2.5-flash", "high");
 	check("gemini 2.5 flash budget", r10.thinkingBudget === 24576, r10);
+	const r10Lite = resolveBackendModel("gemini-3.5-flash-lite", "low");
+	check("gemini 3.5 flash lite", r10Lite.model === "gemini-3.5-flash-lite", r10Lite);
 	const r11 = resolveBackendModel("claude-opus-5-5-thinking", "low");
 	check("claude opus 5.5 thinking low backend", r11.model === "claude-opus-5-5-low" && r11.thinkingBudget === 8192, r11);
 	const r12 = resolveBackendModel("claude-sonnet-5-5");
