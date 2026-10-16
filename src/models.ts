@@ -26,7 +26,7 @@ export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
 			medium: "medium",
 			high: "high",
 			xhigh: null,
-			max: "high",
+			max: null,
 		},
 	},
 	{
@@ -43,7 +43,7 @@ export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
 			medium: "medium",
 			high: "high",
 			xhigh: null,
-			max: "high",
+			max: null,
 		},
 	},
 	{
@@ -55,12 +55,12 @@ export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
 		contextWindow: GEMINI_LIMITS.context,
 		maxTokens: GEMINI_LIMITS.output,
 		thinkingLevelMap: {
-			minimal: "minimal",
+			minimal: null,
 			low: "low",
 			medium: "medium",
 			high: "high",
 			xhigh: null,
-			max: "high",
+			max: null,
 		},
 	},
 	{
@@ -77,7 +77,7 @@ export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
 			medium: "medium",
 			high: "high",
 			xhigh: null,
-			max: "high",
+			max: null,
 		},
 	},
 	{

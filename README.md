@@ -58,7 +58,7 @@ pi --model antigravity/gemini-3.8-flash:high -p "Write a quicksort implementatio
 |----------|----------------|-----------------|-------------|
 | `antigravity/claude-opus-5-5-thinking` | minimal → high | `claude-opus-5-5-low/medium/high` | Anthropic Claude Opus 5.5 with reasoning |
 | `antigravity/claude-sonnet-5-5` | minimal → high | `claude-sonnet-5-5-low/medium/high` | Anthropic Claude Sonnet 5.5 |
-| `antigravity/gemini-3.8-flash` | minimal → high | `gemini-3.8-flash-tiered` | Google Gemini 3.8 Flash (tiered thinking) |
+| `antigravity/gemini-3.8-flash` | low → high | `gemini-3.8-flash-tiered` | Google Gemini 3.8 Flash (tiered thinking) |
 | `antigravity/gemini-3-flash` | minimal → high | `gemini-3-flash` | Google Gemini 3 Flash with thinking levels |
 | `antigravity/gpt-oss-120b` | — | `gpt-oss-120b-medium` | GPT-OSS 120B model |
 | `antigravity/gemini-3.1-flash-image` | — | `gemini-3.1-flash-image` | Multimodal image generation model |
