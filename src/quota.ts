@@ -9,6 +9,8 @@ import { Text } from "@earendil-works/pi-tui";
 import {
 	ANTIGRAVITY_ENDPOINT_FALLBACKS,
 	ANTIGRAVITY_ENDPOINT_PROD,
+	ANTIGRAVITY_LOAD_ENDPOINTS,
+	ANTIGRAVITY_QUOTA_ENDPOINTS,
 	ANTIGRAVITY_PROVIDER_ID,
 } from "./constants.js";
 import {
@@ -71,7 +73,7 @@ export function extractProjectId(project: unknown): string | undefined {
 }
 
 export async function loadCodeAssist(accessToken: string): Promise<LoadCodeAssistResponse> {
-	const endpoints = ANTIGRAVITY_ENDPOINT_FALLBACKS;
+	const endpoints = ANTIGRAVITY_LOAD_ENDPOINTS;
 
 	let lastError: Error | undefined;
 	for (const endpoint of endpoints) {
@@ -101,10 +103,12 @@ export async function fetchUserQuotaSummary(
 	projectId?: string,
 ): Promise<UserQuotaSummaryResponse> {
 	const payload = projectId ? { project: projectId } : {};
-	const endpoints = ANTIGRAVITY_ENDPOINT_FALLBACKS;
+	const endpoints = ANTIGRAVITY_QUOTA_ENDPOINTS;
 
 	let lastStatus = 0;
 	let validData: UserQuotaSummaryResponse | undefined;
+	const mergedGroups: QuotaGroup[] = [];
+	const seenGroupNames = new Set<string>();
 
 	for (const endpoint of endpoints) {
 		try {
@@ -120,11 +124,23 @@ export async function fetchUserQuotaSummary(
 
 			if (response.ok) {
 				const data = (await response.json()) as UserQuotaSummaryResponse;
-				if (data.groups && data.groups.length > 0) {
-					return data;
-				}
 				if (!validData) {
 					validData = data;
+				}
+				if (data.groups && data.groups.length > 0) {
+					for (const g of data.groups) {
+						const key = g.displayName.trim().toLowerCase();
+						if (!seenGroupNames.has(key)) {
+							seenGroupNames.add(key);
+							mergedGroups.push(g);
+						}
+					}
+					// If both Gemini and Claude groups are present, we have full coverage
+					const hasGemini = mergedGroups.some((g) => g.displayName.toLowerCase().includes("gemini"));
+					const hasClaude = mergedGroups.some((g) => g.displayName.toLowerCase().includes("claude"));
+					if (hasGemini && hasClaude) {
+						return { ...data, groups: mergedGroups };
+					}
 				}
 			} else {
 				lastStatus = response.status;
@@ -132,6 +148,10 @@ export async function fetchUserQuotaSummary(
 		} catch {
 			// Try next endpoint
 		}
+	}
+
+	if (mergedGroups.length > 0) {
+		return { ...(validData || {}), groups: mergedGroups };
 	}
 
 	if (validData) {

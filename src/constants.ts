@@ -39,6 +39,12 @@ export const ANTIGRAVITY_LOAD_ENDPOINTS = [
 	ANTIGRAVITY_ENDPOINT_DAILY,
 ] as const;
 
+/** Endpoint order for user quota inspection (prod first as prod contains full Gemini & Claude quotas). */
+export const ANTIGRAVITY_QUOTA_ENDPOINTS = [
+	ANTIGRAVITY_ENDPOINT_PROD,
+	ANTIGRAVITY_ENDPOINT_DAILY,
+] as const;
+
 /** Primary endpoint used for generateContent requests. */
 export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_DAILY;
 

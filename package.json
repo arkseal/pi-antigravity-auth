@@ -23,7 +23,7 @@
   },
   "scripts": {
     "check": "tsc --noEmit",
-    "test": "tsx test/smoke.ts && tsx test/stream-mock.ts && tsx test/comprehensive.ts",
+    "test": "tsx test/smoke.ts && tsx test/stream-mock.ts && tsx test/comprehensive.ts && tsx test/quota-sidebar.test.ts",
     "fetch-models": "tsx scripts/fetch-models.ts",
     "audit-models": "tsx scripts/audit-all-models.ts",
     "check-quota": "tsx scripts/check-quota.ts",

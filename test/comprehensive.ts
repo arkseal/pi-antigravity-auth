@@ -49,7 +49,9 @@ import {
 	setAntigravityVersion,
 	getAntigravityVersion,
 	ANTIGRAVITY_ENDPOINT_DAILY,
+	ANTIGRAVITY_ENDPOINT_PROD,
 	ANTIGRAVITY_ENDPOINT_FALLBACKS,
+	ANTIGRAVITY_QUOTA_ENDPOINTS,
 } from "../src/constants.js";
 
 let failures = 0;
@@ -321,6 +323,7 @@ console.log("\n--- Thinking Recovery Tests ---");
 console.log("\n--- Daily Sandbox Quota Endpoint Order Tests ---");
 {
 	check("daily sandbox endpoint is first fallback", ANTIGRAVITY_ENDPOINT_FALLBACKS[0] === ANTIGRAVITY_ENDPOINT_DAILY);
+	check("quota endpoint order has prod first for full Gemini and Claude limits", ANTIGRAVITY_QUOTA_ENDPOINTS[0] === ANTIGRAVITY_ENDPOINT_PROD);
 }
 
 console.log("\n--- Cross-Model Metadata Sanitization Tests ---");
