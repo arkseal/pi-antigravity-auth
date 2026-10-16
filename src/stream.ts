@@ -25,6 +25,7 @@ import {
 	ANTIGRAVITY_DEFAULT_PROJECT_ID as DEFAULT_PROJECT_ID,
 	ANTIGRAVITY_ENDPOINT,
 	getRandomizedAntigravityHeaders,
+	getAntigravityHubUserAgent,
 } from "./constants.js";
 import {
 	createToolNameMap,
@@ -41,7 +42,6 @@ import {
 	type ManagedAccount,
 } from "./accounts.js";
 import { buildFingerprintHeaders } from "./fingerprint.js";
-import { configureClaudeToolConfig } from "./transform/claude.js";
 import { buildImageGenerationConfig } from "./transform/gemini.js";
 import {
 	analyzeConversationState,
@@ -63,6 +63,7 @@ interface AntigravityEnvelope {
 	model: string;
 	request: Record<string, unknown>;
 	userAgent: string;
+	requestType: string;
 	requestId: string;
 }
 
@@ -78,6 +79,7 @@ function buildEnvelope(
 		model: backendModel,
 		request,
 		userAgent: "antigravity",
+		requestType: "agent",
 		requestId: `pi-${Date.now().toString(36)}-${(requestCounter++).toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
 	};
 }
@@ -253,7 +255,9 @@ export function streamAntigravity(
 
 			const generationConfig: Record<string, unknown> = {};
 			generationConfig.maxOutputTokens =
-				options?.maxTokens && options.maxTokens > 0 ? options.maxTokens : model.maxTokens;
+				options?.maxTokens && options.maxTokens > 0
+					? options.maxTokens
+					: (resolved.maxOutputTokens ?? model.maxTokens);
 			if (options?.temperature !== undefined) {
 				generationConfig.temperature = options.temperature;
 			}
@@ -264,7 +268,8 @@ export function streamAntigravity(
 				const thinkingConfig: Record<string, unknown> = { includeThoughts: true };
 				if (resolved.thinkingLevel !== undefined) {
 					thinkingConfig.thinkingLevel = String(resolved.thinkingLevel).toUpperCase();
-				} else if (resolved.thinkingBudget !== undefined) {
+				}
+				if (resolved.thinkingBudget !== undefined) {
 					thinkingConfig.thinkingBudget = resolved.thinkingBudget;
 				}
 				generationConfig.thinkingConfig = thinkingConfig;
@@ -287,10 +292,6 @@ export function streamAntigravity(
 				if (convertedTools) request.tools = convertedTools;
 			}
 			request.generationConfig = generationConfig;
-
-			if (isClaude) {
-				configureClaudeToolConfig(request);
-			}
 
 			if (resolved.isImageModel) {
 				request.imageConfig = buildImageGenerationConfig();
@@ -356,6 +357,7 @@ export function streamAntigravity(
 				const headers: Record<string, string> = {
 					...getRandomizedAntigravityHeaders(),
 					...buildFingerprintHeaders(account.fingerprint ?? null),
+					"User-Agent": getAntigravityHubUserAgent(),
 					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
 					Accept: "text/event-stream",

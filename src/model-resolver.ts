@@ -12,6 +12,8 @@ export interface ResolvedBackendModel {
 	thinkingLevel?: string;
 	/** Numeric thinking budget (sent via thinkingConfig.thinkingBudget, Claude style). */
 	thinkingBudget?: number;
+	/** Max output tokens override for this backend model. */
+	maxOutputTokens?: number;
 	/** Whether this is an image generation model. */
 	isImageModel?: boolean;
 }
@@ -33,13 +35,23 @@ export const MODEL_ALIASES: Record<string, string> = {
 	"gemini-3-flash-low": "gemini-3-flash",
 	"gemini-3-flash-medium": "gemini-3-flash",
 	"gemini-3-flash-high": "gemini-3-flash",
+	"gemini-3.8-flash-low": "gemini-3.8-flash-low",
+	"gemini-3.8-flash-medium": "gemini-3.8-flash-medium",
+	"gemini-3.8-flash-high": "gemini-3.8-flash-high",
 	"gemini-claude-opus-5-5-thinking-low": "claude-opus-5-5-low",
 	"gemini-claude-opus-5-5-thinking-medium": "claude-opus-5-5-medium",
 	"gemini-claude-opus-5-5-thinking-high": "claude-opus-5-5-high",
 	"gemini-claude-opus-5-5-thinking-max": "claude-opus-5-5-high",
 	"gemini-claude-sonnet-5-5": "claude-sonnet-5-5-high",
+	"claude-opus-5-5": "claude-opus-5-5-high",
 	"claude-opus-5-5-thinking": "claude-opus-5-5-high",
+	"claude-opus-5-5-low": "claude-opus-5-5-low",
+	"claude-opus-5-5-medium": "claude-opus-5-5-medium",
+	"claude-opus-5-5-high": "claude-opus-5-5-high",
 	"claude-sonnet-5-5": "claude-sonnet-5-5-high",
+	"claude-sonnet-5-5-low": "claude-sonnet-5-5-low",
+	"claude-sonnet-5-5-medium": "claude-sonnet-5-5-medium",
+	"claude-sonnet-5-5-high": "claude-sonnet-5-5-high",
 	"gemini-claude-opus-4-6-thinking-low": "claude-opus-4-6-thinking",
 	"gemini-claude-opus-4-6-thinking-medium": "claude-opus-4-6-thinking",
 	"gemini-claude-opus-4-6-thinking-high": "claude-opus-4-6-thinking",
@@ -47,6 +59,7 @@ export const MODEL_ALIASES: Record<string, string> = {
 	"gemini-claude-sonnet-4-6": "claude-sonnet-4-6",
 	"gemini-3-pro-image": "gemini-3.1-flash-image",
 	"gemini-3.1-flash-image": "gemini-3.1-flash-image",
+	"gpt-oss": "gpt-oss-120b-medium",
 	"gpt-oss-120b": "gpt-oss-120b-medium",
 	"gpt-oss-120b-medium": "gpt-oss-120b-medium",
 };
@@ -121,7 +134,11 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 
 	// GPT-OSS models
 	if (lower.startsWith("gpt-oss")) {
-		return { model: "gpt-oss-120b-medium" };
+		return {
+			model: "gpt-oss-120b-medium",
+			thinkingBudget: 8192,
+			maxOutputTokens: 32768,
+		};
 	}
 
 	// Claude models (Claude 5.5 and legacy 4.6 routing)
@@ -129,17 +146,14 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 		const isOpus = lower.includes("opus");
 		const tier = normalizeThinkingLevel(reasoning ?? (lower.match(TIER_REGEX)?.[1] ?? "high"));
 		const tierSuffix = tier === "minimal" ? "low" : tier;
-		const budgetKey = (reasoning?.toLowerCase() ?? tierSuffix) as keyof typeof THINKING_TIER_BUDGETS.claude;
-		const budget = THINKING_TIER_BUDGETS.claude[budgetKey] ?? THINKING_TIER_BUDGETS.claude.high;
+		const thinkingLevel = tierSuffix.toUpperCase();
 
 		// Legacy 4.6 explicit passthrough
 		if (lower.includes("4-6") || lower.includes("4.6")) {
 			const isThinking = isClaudeThinkingModel(lower);
+			const budgetKey = (reasoning?.toLowerCase() ?? tierSuffix) as keyof typeof THINKING_TIER_BUDGETS.claude;
+			const budget = THINKING_TIER_BUDGETS.claude[budgetKey] ?? THINKING_TIER_BUDGETS.claude.high;
 			if (!isThinking) return { model: lower };
-			return { model: lower, thinkingBudget: budget };
-		}
-
-		if (lower.endsWith("-low") || lower.endsWith("-medium") || lower.endsWith("-high")) {
 			return { model: lower, thinkingBudget: budget };
 		}
 
@@ -149,16 +163,22 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 
 		return {
 			model: backendModel,
-			thinkingBudget: budget,
+			thinkingLevel,
+			thinkingBudget: 0,
+			maxOutputTokens: 128000,
 		};
 	}
 
 	// Gemini 3.8 Flash
 	if (GEMINI_38_FLASH_REGEX.test(lower)) {
-		const level = normalizeThinkingLevel(reasoning ?? "low");
+		const level = normalizeThinkingLevel(reasoning ?? (lower.match(TIER_REGEX)?.[1] ?? "high"));
+		const tier = level === "minimal" ? "low" : level;
+		const backendModel = `gemini-3.8-flash-${tier}`;
+		const thinkingBudget = tier === "high" ? -1 : tier === "medium" ? 4000 : 1000;
 		return {
-			model: GEMINI_38_FLASH_TIERED_MODEL,
-			thinkingLevel: level === "minimal" ? "low" : level,
+			model: backendModel,
+			thinkingBudget,
+			maxOutputTokens: 65536,
 		};
 	}
 
@@ -184,7 +204,7 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 		const level = normalizeThinkingLevel(reasoning ?? "low");
 		return {
 			model: "gemini-3.5-flash-lite",
-			thinkingLevel: level === "minimal" ? "low" : level,
+			thinkingLevel: level,
 		};
 	}
 

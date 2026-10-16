@@ -7,6 +7,9 @@ import {
 	EMPTY_SCHEMA_PLACEHOLDER_NAME,
 	EMPTY_SCHEMA_PLACEHOLDER_DESCRIPTION,
 } from "../constants.js";
+import { cleanJSONSchemaForAntigravity } from "./schema.js";
+
+export { cleanJSONSchemaForAntigravity };
 
 const UNSUPPORTED_SCHEMA_FIELDS = new Set([
 	"additionalProperties",
@@ -38,6 +41,17 @@ export function toGeminiSchema(schema: unknown): unknown {
 		return schema;
 	}
 
+	// First pass: clean JSON schema (flatten unions of literals into enums, merge allOf, remove unsupported keywords)
+	const cleaned = cleanJSONSchemaForAntigravity(schema);
+
+	return toGeminiOpenApiSchema(cleaned);
+}
+
+function toGeminiOpenApiSchema(schema: unknown): unknown {
+	if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+		return schema;
+	}
+
 	const inputSchema = schema as Record<string, unknown>;
 	const result: Record<string, unknown> = {};
 
@@ -58,16 +72,16 @@ export function toGeminiSchema(schema: unknown): unknown {
 		} else if (key === "properties" && typeof value === "object" && value !== null) {
 			const props: Record<string, unknown> = {};
 			for (const [propName, propSchema] of Object.entries(value as Record<string, unknown>)) {
-				props[propName] = toGeminiSchema(propSchema);
+				props[propName] = toGeminiOpenApiSchema(propSchema);
 			}
 			result[key] = props;
 		} else if (key === "items" && typeof value === "object") {
-			result[key] = toGeminiSchema(value);
+			result[key] = toGeminiOpenApiSchema(value);
 		} else if (
 			(key === "anyOf" || key === "oneOf" || key === "allOf") &&
 			Array.isArray(value)
 		) {
-			result[key] = value.map((item) => toGeminiSchema(item));
+			result[key] = value.map((item) => toGeminiOpenApiSchema(item));
 		} else if (key === "enum" && Array.isArray(value)) {
 			result[key] = value;
 		} else if (key === "default" || key === "examples") {

@@ -31,14 +31,15 @@ export const ANTIGRAVITY_ENDPOINT_DAILY =
 export const ANTIGRAVITY_ENDPOINT_PROD = "https://cloudcode-pa.googleapis.com";
 
 export const ANTIGRAVITY_ENDPOINT_FALLBACKS = [
-	ANTIGRAVITY_ENDPOINT_DAILY,
+	ANTIGRAVITY_ENDPOINT_DIRECT,
 	ANTIGRAVITY_ENDPOINT_PROD,
+	ANTIGRAVITY_ENDPOINT_DAILY,
 ] as const;
 
-/** Endpoint order for project discovery (prod first). */
+/** Endpoint order for project discovery (direct/prod first). */
 export const ANTIGRAVITY_LOAD_ENDPOINTS = [
-	ANTIGRAVITY_ENDPOINT_PROD,
 	ANTIGRAVITY_ENDPOINT_DIRECT,
+	ANTIGRAVITY_ENDPOINT_PROD,
 	ANTIGRAVITY_ENDPOINT_DAILY,
 ] as const;
 
@@ -50,7 +51,7 @@ export const ANTIGRAVITY_QUOTA_ENDPOINTS = [
 ] as const;
 
 /** Primary endpoint used for generateContent requests. */
-export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_DAILY;
+export const ANTIGRAVITY_ENDPOINT = ANTIGRAVITY_ENDPOINT_DIRECT;
 
 /** Gemini CLI endpoint (production). */
 export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
@@ -59,9 +60,9 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  * Hardcoded project id used when Antigravity does not return one
  * (e.g. business/workspace accounts).
  */
-export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "rising-fact-p41fc";
+export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "aicode-consumers";
 
-export const ANTIGRAVITY_VERSION_FALLBACK = "1.19.4";
+export const ANTIGRAVITY_VERSION_FALLBACK = "2.12.0";
 
 let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
 let versionLocked = false;
@@ -131,7 +132,7 @@ export function getRandomizedAntigravityHeaders(): HeaderSet {
 	const platform = randomFrom(ANTIGRAVITY_PLATFORMS);
 	const metadataPlatform = platform.startsWith("windows") ? "WINDOWS" : "MACOS";
 	return {
-		"User-Agent": `antigravity/${getAntigravityVersion()} ${platform}`,
+		"User-Agent": getAntigravityHubUserAgent(),
 		"X-Goog-Api-Client": randomFrom(ANTIGRAVITY_API_CLIENTS),
 		"Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${metadataPlatform}","pluginType":"GEMINI"}`,
 	};

@@ -48,6 +48,7 @@ import { toGeminiSchema } from "../src/transform/gemini.js";
 import {
 	setAntigravityVersion,
 	getAntigravityVersion,
+	ANTIGRAVITY_ENDPOINT,
 	ANTIGRAVITY_ENDPOINT_DIRECT,
 	ANTIGRAVITY_ENDPOINT_DAILY,
 	ANTIGRAVITY_ENDPOINT_PROD,
@@ -112,9 +113,9 @@ console.log("\n--- Model Resolver Tests ---");
 {
 	// Gemini 3.8 Flash
 	const g38 = resolveBackendModel("gemini-3.8-flash", "high");
-	check("gemini-3.8-flash high", g38.model === "gemini-3.8-flash-tiered" && g38.thinkingLevel === "high");
+	check("gemini-3.8-flash high", g38.model === "gemini-3.8-flash-high" && g38.thinkingBudget === -1);
 	const g38Min = resolveBackendModel("gemini-3.8-flash", "minimal");
-	check("gemini-3.8-flash minimal mapped to low", g38Min.model === "gemini-3.8-flash-tiered" && g38Min.thinkingLevel === "low");
+	check("gemini-3.8-flash minimal mapped to low", g38Min.model === "gemini-3.8-flash-low" && g38Min.thinkingBudget === 1000);
 
 	// Gemini 3.7 Flash
 	const g37 = resolveBackendModel("gemini-3.7-flash", "medium");
@@ -142,9 +143,9 @@ console.log("\n--- Model Resolver Tests ---");
 
 	// Claude Models (5.5 & legacy)
 	const opus55High = resolveBackendModel("claude-opus-5-5-thinking", "high");
-	check("claude-opus-5-5 high backend", opus55High.model === "claude-opus-5-5-high" && opus55High.thinkingBudget === 32768);
+	check("claude-opus-5-5 high backend", opus55High.model === "claude-opus-5-5-high" && opus55High.thinkingLevel === "HIGH" && opus55High.thinkingBudget === 0);
 	const opus55Low = resolveBackendModel("claude-opus-5-5-thinking", "low");
-	check("claude-opus-5-5 low backend", opus55Low.model === "claude-opus-5-5-low" && opus55Low.thinkingBudget === 8192);
+	check("claude-opus-5-5 low backend", opus55Low.model === "claude-opus-5-5-low" && opus55Low.thinkingLevel === "LOW" && opus55Low.thinkingBudget === 0);
 	const sonnet55 = resolveBackendModel("claude-sonnet-5-5");
 	check("claude-sonnet-5-5 default backend", sonnet55.model === "claude-sonnet-5-5-high");
 
@@ -155,7 +156,7 @@ console.log("\n--- Model Resolver Tests ---");
 
 	// GPT-OSS Model
 	const gptOss = resolveBackendModel("gpt-oss-120b");
-	check("gpt-oss-120b backend", gptOss.model === "gpt-oss-120b-medium");
+	check("gpt-oss-120b backend", gptOss.model === "gpt-oss-120b-medium" && gptOss.thinkingBudget === 8192);
 
 	// Image Model
 	const img = resolveBackendModel("gemini-3.1-flash-image");
@@ -321,9 +322,9 @@ console.log("\n--- Thinking Recovery Tests ---");
 	check("hasPossibleCompactedThinking detects compacted turn", hasPossibleCompactedThinking(corruptedContents, 1));
 }
 
-console.log("\n--- Daily Sandbox Quota Endpoint Order Tests ---");
+console.log("\n--- Antigravity Primary Endpoint Tests ---");
 {
-	check("daily sandbox endpoint is first fallback", ANTIGRAVITY_ENDPOINT_FALLBACKS[0] === ANTIGRAVITY_ENDPOINT_DAILY);
+	check("direct endpoint is primary", ANTIGRAVITY_ENDPOINT === ANTIGRAVITY_ENDPOINT_DIRECT);
 	check("quota endpoint order has direct/prod first for full Gemini and Claude limits", ANTIGRAVITY_QUOTA_ENDPOINTS[0] === ANTIGRAVITY_ENDPOINT_DIRECT || ANTIGRAVITY_QUOTA_ENDPOINTS[0] === ANTIGRAVITY_ENDPOINT_PROD);
 }
 
@@ -369,6 +370,27 @@ console.log("\n--- Gemini Schema Cleaning Tests ---");
 	const props = cleaned.properties as Record<string, Record<string, unknown>>;
 	check("schema array items fallback inserted", props.items?.items !== undefined && (props.items.items as { type: string }).type === "STRING");
 	check("schema empty object placeholder inserted", (props.metadata?.properties as Record<string, unknown>)?._placeholder !== undefined);
+
+	// Test literal union (Type.Union([Type.Literal(...)]) as in lsp tool)
+	const unionLiteralSchema = {
+		type: "object",
+		properties: {
+			operation: {
+				description: "The LSP operation",
+				anyOf: [
+					{ const: "goToDefinition", type: "string" },
+					{ const: "findReferences", type: "string" },
+					{ const: "hover", type: "string" },
+				],
+			},
+		},
+		required: ["operation"],
+	};
+	const cleanedUnion = toGeminiSchema(unionLiteralSchema) as Record<string, unknown>;
+	const unionProps = cleanedUnion.properties as Record<string, Record<string, unknown>>;
+	check("union of literals flattened to enum", Array.isArray(unionProps.operation?.enum) && (unionProps.operation?.enum as string[]).length === 3);
+	check("union enum values preserved", (unionProps.operation?.enum as string[])[0] === "goToDefinition");
+	check("union operation has valid type", unionProps.operation?.type === "STRING");
 }
 
 console.log(failures === 0 ? "\nAll comprehensive tests passed successfully!" : `\n${failures} test(s) FAILED.`);

@@ -66,7 +66,7 @@ function check(name: string, cond: boolean, detail?: unknown) {
 	const r10Lite = resolveBackendModel("gemini-3.5-flash-lite", "low");
 	check("gemini 3.5 flash lite", r10Lite.model === "gemini-3.5-flash-lite", r10Lite);
 	const r11 = resolveBackendModel("claude-opus-5-5-thinking", "low");
-	check("claude opus 5.5 thinking low backend", r11.model === "claude-opus-5-5-low" && r11.thinkingBudget === 8192, r11);
+	check("claude opus 5.5 thinking low backend", r11.model === "claude-opus-5-5-low" && r11.thinkingLevel === "LOW" && r11.thinkingBudget === 0, r11);
 	const r12 = resolveBackendModel("claude-sonnet-5-5");
 	check("claude sonnet 5.5 default backend", r12.model === "claude-sonnet-5-5-high", r12);
 	check("model catalog nonempty", ANTIGRAVITY_MODELS.length >= 6);

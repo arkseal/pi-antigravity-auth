@@ -34,6 +34,7 @@ import {
 import { getAccountManager, upsertExtraAccount } from "./src/accounts.js";
 import { ANTIGRAVITY_MODELS } from "./src/models.js";
 import { ANTIGRAVITY_API_ID, streamAntigravity } from "./src/stream.js";
+import { ANTIGRAVITY_ENDPOINT } from "./src/constants.js";
 import { openBrowser } from "./src/browser.js";
 import { registerQuotaFeature, refreshCachedQuota } from "./src/quota.js";
 import { initAntigravityVersion } from "./src/version.js";
@@ -197,7 +198,7 @@ export default function antigravityExtension(pi: ExtensionAPI) {
 	// 3. Register custom provider
 	pi.registerProvider(PROVIDER_ID, {
 		name: PROVIDER_NAME,
-		baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
+		baseUrl: ANTIGRAVITY_ENDPOINT,
 		api: ANTIGRAVITY_API_ID,
 
 		models: ANTIGRAVITY_MODELS,

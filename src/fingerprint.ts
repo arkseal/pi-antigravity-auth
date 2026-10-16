@@ -63,6 +63,10 @@ function platformToDisplayName(platform: string): "WINDOWS" | "MACOS" {
 	return platform === "win32" ? "WINDOWS" : "MACOS";
 }
 
+function platformToOsType(platform: string): "windows" | "darwin" | "linux" {
+	return platform === "win32" ? "windows" : platform === "darwin" ? "darwin" : "linux";
+}
+
 function generateDeviceId(): string {
 	return crypto.randomUUID();
 }
@@ -78,7 +82,7 @@ export function generateFingerprint(): Fingerprint {
 	return {
 		deviceId: generateDeviceId(),
 		sessionToken: generateSessionToken(),
-		userAgent: `antigravity/${getAntigravityVersion()} ${platform}/${arch}`,
+		userAgent: `antigravity/hub/${getAntigravityVersion()} (aidev_client; os_type=${platformToOsType(platform)}; arch=${arch === "x64" ? "amd64" : "arm64"}; cl=975213627)`,
 		apiClient: randomFrom(SDK_CLIENTS),
 		clientMetadata: {
 			ideType: randomFrom(IDE_TYPES),
@@ -96,7 +100,7 @@ export function collectCurrentFingerprint(): Fingerprint {
 	return {
 		deviceId: generateDeviceId(),
 		sessionToken: generateSessionToken(),
-		userAgent: `antigravity/${getAntigravityVersion()} ${platform}/${arch}`,
+		userAgent: `antigravity/hub/${getAntigravityVersion()} (aidev_client; os_type=${platformToOsType(platform)}; arch=${arch === "x64" ? "amd64" : "arm64"}; cl=975213627)`,
 		apiClient: "google-cloud-sdk vscode_cloudshelleditor/0.1",
 		clientMetadata: {
 			ideType: "ANTIGRAVITY",
@@ -109,7 +113,7 @@ export function collectCurrentFingerprint(): Fingerprint {
 
 export function updateFingerprintVersion(fingerprint: Fingerprint): boolean {
 	const currentVersion = getAntigravityVersion();
-	const versionPattern = /^(antigravity\/)([\d.]+)/;
+	const versionPattern = /^(antigravity\/(?:hub\/)?)([\d.]+)/;
 	const match = fingerprint.userAgent.match(versionPattern);
 
 	if (!match || match[2] === currentVersion) {
