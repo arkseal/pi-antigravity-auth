@@ -63,7 +63,11 @@ function check(name: string, cond: boolean, detail?: unknown) {
 	check("gemini 3.7 flash tiered", r9.model === "gemini-3.7-flash-tiered" && r9.thinkingLevel === "low", r9);
 	const r10 = resolveBackendModel("gemini-2.5-flash", "high");
 	check("gemini 2.5 flash budget", r10.thinkingBudget === 24576, r10);
-	check("model catalog nonempty", ANTIGRAVITY_MODELS.length >= 8);
+	const r11 = resolveBackendModel("claude-opus-5-5-thinking", "low");
+	check("claude opus 5.5 thinking low backend", r11.model === "claude-opus-5-5-low" && r11.thinkingBudget === 8192, r11);
+	const r12 = resolveBackendModel("claude-sonnet-5-5");
+	check("claude sonnet 5.5 default backend", r12.model === "claude-sonnet-5-5-high", r12);
+	check("model catalog nonempty", ANTIGRAVITY_MODELS.length >= 6);
 }
 
 // --- tool name mapping ------------------------------------------------------

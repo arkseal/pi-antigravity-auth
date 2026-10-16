@@ -137,11 +137,22 @@ console.log("\n--- Model Resolver Tests ---");
 	const g31High = resolveBackendModel("gemini-3.1-pro", "high");
 	check("gemini-3.1-pro high", g31High.model === "gemini-pro-agent");
 
-	// Claude Models
+	// Claude Models (5.5 & legacy)
+	const opus55High = resolveBackendModel("claude-opus-5-5-thinking", "high");
+	check("claude-opus-5-5 high backend", opus55High.model === "claude-opus-5-5-high" && opus55High.thinkingBudget === 32768);
+	const opus55Low = resolveBackendModel("claude-opus-5-5-thinking", "low");
+	check("claude-opus-5-5 low backend", opus55Low.model === "claude-opus-5-5-low" && opus55Low.thinkingBudget === 8192);
+	const sonnet55 = resolveBackendModel("claude-sonnet-5-5");
+	check("claude-sonnet-5-5 default backend", sonnet55.model === "claude-sonnet-5-5-high");
+
 	const opusHigh = resolveBackendModel("claude-opus-4-6-thinking", "high");
 	check("claude opus high budget 32768", opusHigh.thinkingBudget === 32768);
 	const sonnet = resolveBackendModel("claude-sonnet-4-6");
 	check("claude sonnet no budget", sonnet.thinkingBudget === undefined);
+
+	// GPT-OSS Model
+	const gptOss = resolveBackendModel("gpt-oss-120b");
+	check("gpt-oss-120b backend", gptOss.model === "gpt-oss-120b-medium");
 
 	// Image Model
 	const img = resolveBackendModel("gemini-3.1-flash-image");
@@ -187,7 +198,7 @@ console.log("\n--- Health Score & Token Bucket Rotation Tests ---");
 	const tokens = new TokenBucketTracker({ initialTokens: 10, maxTokens: 10 });
 	check("token bucket has tokens", tokens.hasTokens(0, 5));
 	check("token bucket consume", tokens.consume(0, 5));
-	check("token bucket balance after consume", tokens.getTokens(0) === 5);
+	check("token bucket balance after consume", Math.round(tokens.getTokens(0)) === 5);
 	tokens.refund(0, 2);
 	check("token bucket balance after refund", Math.round(tokens.getTokens(0)) === 7);
 

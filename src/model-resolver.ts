@@ -33,6 +33,13 @@ export const MODEL_ALIASES: Record<string, string> = {
 	"gemini-3-flash-low": "gemini-3-flash",
 	"gemini-3-flash-medium": "gemini-3-flash",
 	"gemini-3-flash-high": "gemini-3-flash",
+	"gemini-claude-opus-5-5-thinking-low": "claude-opus-5-5-low",
+	"gemini-claude-opus-5-5-thinking-medium": "claude-opus-5-5-medium",
+	"gemini-claude-opus-5-5-thinking-high": "claude-opus-5-5-high",
+	"gemini-claude-opus-5-5-thinking-max": "claude-opus-5-5-high",
+	"gemini-claude-sonnet-5-5": "claude-sonnet-5-5-high",
+	"claude-opus-5-5-thinking": "claude-opus-5-5-high",
+	"claude-sonnet-5-5": "claude-sonnet-5-5-high",
 	"gemini-claude-opus-4-6-thinking-low": "claude-opus-4-6-thinking",
 	"gemini-claude-opus-4-6-thinking-medium": "claude-opus-4-6-thinking",
 	"gemini-claude-opus-4-6-thinking-high": "claude-opus-4-6-thinking",
@@ -40,6 +47,8 @@ export const MODEL_ALIASES: Record<string, string> = {
 	"gemini-claude-sonnet-4-6": "claude-sonnet-4-6",
 	"gemini-3-pro-image": "gemini-3.1-flash-image",
 	"gemini-3.1-flash-image": "gemini-3.1-flash-image",
+	"gpt-oss-120b": "gpt-oss-120b-medium",
+	"gpt-oss-120b-medium": "gpt-oss-120b-medium",
 };
 
 const TIER_REGEX = /-(minimal|low|medium|high|max)$/i;
@@ -110,15 +119,38 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 		return { model: "gemini-3.1-flash-image", isImageModel: true };
 	}
 
-	// Claude models
+	// GPT-OSS models
+	if (lower.startsWith("gpt-oss")) {
+		return { model: "gpt-oss-120b-medium" };
+	}
+
+	// Claude models (Claude 5.5 and legacy 4.6 routing)
 	if (isClaudeModel(lower)) {
-		const isThinking = isClaudeThinkingModel(lower);
-		if (!isThinking) {
-			return { model: lower };
+		const isOpus = lower.includes("opus");
+		const tier = normalizeThinkingLevel(reasoning ?? (lower.match(TIER_REGEX)?.[1] ?? "high"));
+		const tierSuffix = tier === "minimal" ? "low" : tier;
+		const budgetKey = (reasoning?.toLowerCase() ?? tierSuffix) as keyof typeof THINKING_TIER_BUDGETS.claude;
+		const budget = THINKING_TIER_BUDGETS.claude[budgetKey] ?? THINKING_TIER_BUDGETS.claude.high;
+
+		// Legacy 4.6 explicit passthrough
+		if (lower.includes("4-6") || lower.includes("4.6")) {
+			const isThinking = isClaudeThinkingModel(lower);
+			if (!isThinking) return { model: lower };
+			return { model: lower, thinkingBudget: budget };
 		}
-		const tier = (reasoning?.toLowerCase() ?? "high") as keyof typeof THINKING_TIER_BUDGETS.claude;
-		const budget = THINKING_TIER_BUDGETS.claude[tier] ?? THINKING_TIER_BUDGETS.claude.high;
-		return { model: lower, thinkingBudget: budget };
+
+		if (lower.endsWith("-low") || lower.endsWith("-medium") || lower.endsWith("-high")) {
+			return { model: lower, thinkingBudget: budget };
+		}
+
+		const backendModel = isOpus
+			? `claude-opus-5-5-${tierSuffix}`
+			: `claude-sonnet-5-5-${tierSuffix}`;
+
+		return {
+			model: backendModel,
+			thinkingBudget: budget,
+		};
 	}
 
 	// Gemini 3.8 Flash
