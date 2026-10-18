@@ -69,6 +69,14 @@ function check(name: string, cond: boolean, detail?: unknown) {
 	check("claude opus 5.5 thinking low backend", r11.model === "claude-opus-5-5-low" && r11.thinkingLevel === "LOW" && r11.thinkingBudget === 0, r11);
 	const r12 = resolveBackendModel("claude-sonnet-5-5");
 	check("claude sonnet 5.5 default backend", r12.model === "claude-sonnet-5-5-high", r12);
+	const rArgonLow = resolveBackendModel("gemini-4-argon", "low");
+	check("gemini 4 argon low", rArgonLow.model === "gemini-4-argon-low" && rArgonLow.thinkingLevel === "LOW");
+	const rArgonMed = resolveBackendModel("gemini-4-argon", "medium");
+	check("gemini 4 argon medium", rArgonMed.model === "gemini-4-argon-medium" && rArgonMed.thinkingLevel === "MEDIUM");
+	const rArgonHigh = resolveBackendModel("gemini-4-argon", "high");
+	check("gemini 4 argon high", rArgonHigh.model === "gemini-4-argon-high" && rArgonHigh.thinkingLevel === "HIGH");
+	const argonModelDef = ANTIGRAVITY_MODELS.find((m) => m.id === "gemini-4-argon");
+	check("tiered argon model in catalog", Boolean(argonModelDef && argonModelDef.thinkingLevelMap?.low === "low" && argonModelDef.thinkingLevelMap?.minimal === null));
 	check("model catalog nonempty", ANTIGRAVITY_MODELS.length >= 6);
 }
 

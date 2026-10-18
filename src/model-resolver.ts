@@ -62,6 +62,18 @@ export const MODEL_ALIASES: Record<string, string> = {
 	"gpt-oss": "gpt-oss-120b-medium",
 	"gpt-oss-120b": "gpt-oss-120b-medium",
 	"gpt-oss-120b-medium": "gpt-oss-120b-medium",
+	"gemini-4-argon": "gemini-4-argon-medium",
+	"gemini-4-argon-low": "gemini-4-argon-low",
+	"gemini-4-argon-medium": "gemini-4-argon-medium",
+	"gemini-4-argon-high": "gemini-4-argon-high",
+	"gemini-argon": "gemini-4-argon-medium",
+	"gemini-argon-low": "gemini-4-argon-low",
+	"gemini-argon-medium": "gemini-4-argon-medium",
+	"gemini-argon-high": "gemini-4-argon-high",
+	"argon": "gemini-4-argon-medium",
+	"argon-low": "gemini-4-argon-low",
+	"argon-medium": "gemini-4-argon-medium",
+	"argon-high": "gemini-4-argon-high",
 };
 
 const TIER_REGEX = /-(minimal|low|medium|high|max)$/i;
@@ -78,6 +90,7 @@ const GEMINI_37_FLASH_REGEX = /^gemini-3\.7-flash(?:-(minimal|low|medium|high))?
 const GEMINI_37_FLASH_TIERED_MODEL = "gemini-3.7-flash-tiered";
 export const GEMINI_38_FLASH_REGEX = /^gemini-3\.8-flash(?:-(minimal|low|medium|high))?$/i;
 const GEMINI_38_FLASH_TIERED_MODEL = "gemini-3.8-flash-tiered";
+export const GEMINI_4_ARGON_REGEX = /^(?:gemini-4-argon|gemini-argon|argon)(?:-(minimal|low|medium|high|max))?$/i;
 
 export function isClaudeModel(model: string): boolean {
 	return model.toLowerCase().includes("claude");
@@ -86,6 +99,11 @@ export function isClaudeModel(model: string): boolean {
 export function isClaudeThinkingModel(model: string): boolean {
 	const lower = model.toLowerCase();
 	return lower.includes("claude") && lower.includes("thinking");
+}
+
+export function isArgonModel(model: string): boolean {
+	const lower = model.toLowerCase();
+	return lower.includes("argon") || lower.includes("gemini-4");
 }
 
 export function isImageGenerationModel(model: string): boolean {
@@ -166,6 +184,18 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 			thinkingLevel,
 			thinkingBudget: 0,
 			maxOutputTokens: 128000,
+		};
+	}
+
+	// Gemini 4 Argon
+	if (GEMINI_4_ARGON_REGEX.test(lower)) {
+		const tier = normalizeThinkingLevel(reasoning ?? (lower.match(TIER_REGEX)?.[1] ?? "medium"));
+		const tierSuffix = tier === "minimal" ? "low" : tier;
+		const backendModel = `gemini-4-argon-${tierSuffix}`;
+		return {
+			model: backendModel,
+			thinkingLevel: tierSuffix.toUpperCase(),
+			maxOutputTokens: 65536,
 		};
 	}
 

@@ -20,6 +20,7 @@ import {
 	isClaudeModel,
 	isClaudeThinkingModel,
 	isImageGenerationModel,
+	isArgonModel,
 } from "../src/model-resolver.js";
 import {
 	generateFingerprint,
@@ -158,6 +159,14 @@ console.log("\n--- Model Resolver Tests ---");
 	const gptOss = resolveBackendModel("gpt-oss-120b");
 	check("gpt-oss-120b backend", gptOss.model === "gpt-oss-120b-medium" && gptOss.thinkingBudget === 8192);
 
+	// Gemini 4 Argon Models
+	const argonDefault = resolveBackendModel("gemini-4-argon");
+	check("argon default medium backend", argonDefault.model === "gemini-4-argon-medium" && argonDefault.thinkingLevel === "MEDIUM");
+	const argonLow = resolveBackendModel("gemini-4-argon", "low");
+	check("argon low backend", argonLow.model === "gemini-4-argon-low" && argonLow.thinkingLevel === "LOW");
+	const argonHigh = resolveBackendModel("gemini-4-argon", "high");
+	check("argon high backend", argonHigh.model === "gemini-4-argon-high" && argonHigh.thinkingLevel === "HIGH");
+
 	// Image Model
 	const img = resolveBackendModel("gemini-3.1-flash-image");
 	check("image model resolved", img.model === "gemini-3.1-flash-image" && img.isImageModel === true);
@@ -168,6 +177,8 @@ console.log("\n--- Model Resolver Tests ---");
 	check("isClaudeThinkingModel true", isClaudeThinkingModel("claude-opus-4-6-thinking"));
 	check("isClaudeThinkingModel false", !isClaudeThinkingModel("claude-sonnet-4-6"));
 	check("isImageGenerationModel true", isImageGenerationModel("gemini-3.1-flash-image"));
+	check("isArgonModel true", isArgonModel("gemini-4-argon"));
+	check("isArgonModel false", !isArgonModel("gemini-3.8-flash"));
 	check("getModelFamily claude", getModelFamily("claude-opus-4-6-thinking") === "claude");
 	check("getModelFamily flash", getModelFamily("gemini-3.8-flash") === "gemini-flash");
 	check("getModelFamily pro", getModelFamily("gemini-3.1-pro") === "gemini-pro");
@@ -391,6 +402,11 @@ console.log("\n--- Gemini Schema Cleaning Tests ---");
 	check("union of literals flattened to enum", Array.isArray(unionProps.operation?.enum) && (unionProps.operation?.enum as string[]).length === 3);
 	check("union enum values preserved", (unionProps.operation?.enum as string[])[0] === "goToDefinition");
 	check("union operation has valid type", unionProps.operation?.type === "STRING");
+
+	// Test Antigravity title generator configuration
+	const { ANTIGRAVITY_TITLE_SYSTEM_INSTRUCTION, generateConversationTitle } = await import("../src/title.js");
+	check("title instruction mentions title-cased", ANTIGRAVITY_TITLE_SYSTEM_INSTRUCTION.includes("title-cased"));
+	check("title generator function exported", typeof generateConversationTitle === "function");
 }
 
 console.log(failures === 0 ? "\nAll comprehensive tests passed successfully!" : `\n${failures} test(s) FAILED.`);

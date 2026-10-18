@@ -39,6 +39,7 @@ import { openBrowser } from "./src/browser.js";
 import { registerQuotaFeature, refreshCachedQuota } from "./src/quota.js";
 import { initAntigravityVersion } from "./src/version.js";
 import { createProactiveRefreshQueue } from "./src/refresh-queue.js";
+import { generateConversationTitle } from "./src/title.js";
 
 const PROVIDER_ID = "antigravity";
 const PROVIDER_NAME = "Google Antigravity";
@@ -216,8 +217,76 @@ export default function antigravityExtension(pi: ExtensionAPI) {
 
 	// 4. Register quota inspection, search tool, and account commands
 	registerQuotaFeature(pi, PROVIDER_ID);
+
+	// 5. Automatic session naming with gemini-3.1-flash-lite (matches Antigravity IDE)
+	pi.on("agent_end", async (event) => {
+		try {
+			const currentName = pi.getSessionName();
+			if (currentName && currentName.trim().length > 0) return;
+
+			const firstUserMsg = event.messages.find((m) => m.role === "user");
+			if (!firstUserMsg) return;
+
+			let userText = "";
+			if (typeof firstUserMsg.content === "string") {
+				userText = firstUserMsg.content;
+			} else if (Array.isArray(firstUserMsg.content)) {
+				userText = firstUserMsg.content
+					.filter((p) => p.type === "text")
+					.map((p) => (p as { text: string }).text)
+					.join("\n");
+			}
+
+			if (!userText || userText.trim().length < 3) return;
+
+			const title = await generateConversationTitle(userText);
+			if (title) {
+				pi.setSessionName(title);
+			}
+		} catch {
+			// Silent background fallback
+		}
+	});
+
+	// 6. Manual command to generate or refresh session title
+	pi.registerCommand("autoname", {
+		description: "Auto-generate a session title using Antigravity Gemini Flash Lite",
+		handler: async (_args, ctx) => {
+			const entries = ctx.sessionManager.getEntries();
+			const firstUser = entries.find(
+				(entry) =>
+					entry.type === "message" &&
+					(entry as { message?: { role: string } }).message?.role === "user",
+			);
+			const msg = (firstUser as { message?: { content: unknown } } | undefined)?.message;
+			let userText = "";
+			if (typeof msg?.content === "string") {
+				userText = msg.content;
+			} else if (Array.isArray(msg?.content)) {
+				userText = msg.content
+					.filter((p: { type: string }) => p.type === "text")
+					.map((p: { text: string }) => p.text)
+					.join("\n");
+			}
+
+			if (!userText || userText.trim().length === 0) {
+				ctx.ui.notify("No user message found to generate a title from.");
+				return;
+			}
+
+			ctx.ui.notify("Generating session title via Antigravity…");
+			const title = await generateConversationTitle(userText);
+			if (title) {
+				pi.setSessionName(title);
+				ctx.ui.notify(`Session renamed to: "${title}"`);
+			} else {
+				ctx.ui.notify("Failed to generate session title.");
+			}
+		},
+	});
 }
 
+export * from "./src/title.js";
 export * from "./src/quota.js";
 export * from "./src/models.js";
 export * from "./src/math/index.js";

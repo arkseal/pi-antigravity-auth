@@ -271,3 +271,41 @@ test("getLocalLanguageServerInfo returns null or valid port object", () => {
 		assert.equal(info, null);
 	}
 });
+
+test("renderQuotaSidebarPanel renders separate Gemini 4 Argon quota", () => {
+	const mockAccounts = [{ email: "test@example.com" }];
+	const mockResults = [
+		{
+			email: "test@example.com",
+			success: true,
+			groups: [
+				{
+					displayName: "Gemini Models",
+					buckets: [
+						{ bucketId: "gemini-5h", displayName: "Five Hour Limit", remainingFraction: 0.9 },
+						{ bucketId: "gemini-weekly", displayName: "Weekly Limit", remainingFraction: 0.8 },
+					],
+				},
+				{
+					displayName: "Claude and GPT models",
+					buckets: [
+						{ bucketId: "3p-5h", displayName: "Five Hour Limit", remainingFraction: 1.0 },
+						{ bucketId: "3p-weekly", displayName: "Weekly Limit", remainingFraction: 0.95 },
+					],
+				},
+				{
+					displayName: "Gemini 4 Argon",
+					buckets: [
+						{ bucketId: "gemini-argon-wtu-weekly", displayName: "Gemini 4 Argon Weekly Limit", remainingFraction: 0.98 },
+					],
+				},
+			],
+		},
+	];
+
+	_setCachedQuotaForTesting(mockResults as any, mockAccounts as any);
+	const lines = renderQuotaSidebarPanel(40);
+	const text = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, "")).join("\n");
+	assert.ok(text.includes("Gemini 4 Argon"), "Expected Gemini 4 Argon section in sidebar");
+	assert.ok(text.includes("98%"), "Expected 98% bar for Argon");
+});

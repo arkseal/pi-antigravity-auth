@@ -262,8 +262,9 @@ export function streamAntigravity(
 				generationConfig.temperature = options.temperature;
 			}
 
+			const thinkingOff = (options?.reasoning as unknown as string) === "off";
 			const thinkingRequested =
-				Boolean(options?.reasoning) && (options?.reasoning as unknown as string) !== "off";
+				!thinkingOff && (Boolean(options?.reasoning) || resolved.thinkingLevel !== undefined);
 			if (model.reasoning && thinkingRequested) {
 				const thinkingConfig: Record<string, unknown> = { includeThoughts: true };
 				if (resolved.thinkingLevel !== undefined) {

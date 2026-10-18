@@ -169,6 +169,7 @@ export async function fetchUserQuotaSummary(
 export interface AvailableModelQuota {
 	gemini?: { remainingFraction: number; resetTime?: string };
 	claude?: { remainingFraction: number; resetTime?: string };
+	argon?: { remainingFraction: number; resetTime?: string };
 }
 
 export async function fetchLiveModelQuotas(
@@ -201,6 +202,10 @@ export async function fetchLiveModelQuotas(
 				models["claude-sonnet-5-5-high"] ||
 				models["claude-opus-5-5-high"] ||
 				models["claude-sonnet-5-5-medium"];
+			const argonModel =
+				models["gemini-4-argon-medium"] ||
+				models["gemini-4-argon-low"] ||
+				models["gemini-4-argon-high"];
 			const result: AvailableModelQuota = {};
 			if (geminiModel?.quotaInfo && typeof geminiModel.quotaInfo.remainingFraction === "number") {
 				result.gemini = {
@@ -214,7 +219,13 @@ export async function fetchLiveModelQuotas(
 					resetTime: claudeModel.quotaInfo.resetTime,
 				};
 			}
-			if (result.gemini || result.claude) {
+			if (argonModel?.quotaInfo && typeof argonModel.quotaInfo.remainingFraction === "number") {
+				result.argon = {
+					remainingFraction: argonModel.quotaInfo.remainingFraction,
+					resetTime: argonModel.quotaInfo.resetTime,
+				};
+			}
+			if (result.gemini || result.claude || result.argon) {
 				return result;
 			}
 		} catch {
@@ -346,7 +357,9 @@ export async function fetchAccountQuota(
 			const cachedWeeklyBucket = cachedGeminiGroup?.buckets.find((b) => (b.bucketId || "").includes("weekly") || (b.window || "").includes("weekly"));
 
 			if (liveQuotas.gemini) {
-				const geminiGroup = groups.find((g: QuotaGroup) => g.displayName.toLowerCase().includes("gemini"));
+				const geminiGroup = groups.find((g: QuotaGroup) =>
+					g.displayName.toLowerCase().includes("gemini") && !g.displayName.toLowerCase().includes("argon"),
+				);
 				if (geminiGroup) {
 					const b5h = geminiGroup.buckets.find((b: QuotaBucket) =>
 						(b.bucketId || "").includes("5h") ||
@@ -400,6 +413,49 @@ export async function fetchAccountQuota(
 					if (b5h && liveQuotas.claude.resetTime) {
 						b5h.resetTime = liveQuotas.claude.resetTime;
 					}
+				}
+			}
+			if (liveQuotas.argon) {
+				const argonGroup = groups.find((g: QuotaGroup) =>
+					g.displayName.toLowerCase().includes("argon"),
+				);
+				if (argonGroup) {
+					const bWk = argonGroup.buckets.find((b: QuotaBucket) =>
+						(b.bucketId || "").includes("weekly") ||
+						(b.window || "").includes("weekly") ||
+						(b.displayName || "").toLowerCase().includes("weekly"),
+					);
+					if (bWk) {
+						bWk.remainingFraction = liveQuotas.argon.remainingFraction;
+						if (liveQuotas.argon.resetTime) {
+							bWk.resetTime = liveQuotas.argon.resetTime;
+						}
+					}
+					const b5h = argonGroup.buckets.find((b: QuotaBucket) =>
+						(b.bucketId || "").includes("5h") ||
+						(b.window || "").includes("5h") ||
+						(b.displayName || "").toLowerCase().includes("5"),
+					);
+					if (b5h) {
+						b5h.remainingFraction = liveQuotas.argon.remainingFraction;
+						if (liveQuotas.argon.resetTime) {
+							b5h.resetTime = liveQuotas.argon.resetTime;
+						}
+					}
+				} else {
+					groups.push({
+						displayName: "Gemini 4 Argon",
+						description: "Argon quota is separate from standard Gemini models.",
+						buckets: [
+							{
+								bucketId: "gemini-argon-wtu-weekly",
+								displayName: "Gemini 4 Argon Weekly Limit",
+								window: "weekly",
+								remainingFraction: liveQuotas.argon.remainingFraction,
+								resetTime: liveQuotas.argon.resetTime,
+							},
+						],
+					});
 				}
 			}
 		} catch {
@@ -476,6 +532,9 @@ export function formatQuotaReport(results: AccountQuotaResult[], accounts: Manag
 	}
 
 	const now = Date.now();
+	const hasArgonInResults = results.some((r) =>
+		r.groups?.some((g) => g.displayName.toLowerCase().includes("argon")),
+	);
 	const expectedGroups = [
 		{
 			displayName: "Gemini Models",
@@ -487,15 +546,36 @@ export function formatQuotaReport(results: AccountQuotaResult[], accounts: Manag
 			bucketIds: ["3p-weekly", "3p-5h"],
 			bucketNames: ["Weekly Limit", "Five Hour Limit"],
 		},
+		...(hasArgonInResults
+			? [
+					{
+						displayName: "Gemini 4 Argon",
+						bucketIds: ["gemini-argon-wtu-weekly", "gemini-argon-5h"],
+						bucketNames: ["Gemini 4 Argon Weekly Limit", "Five Hour Limit"],
+					},
+			  ]
+			: []),
 	];
 
 	for (const group of expectedGroups) {
+		const relevantBucketIds = group.bucketIds.filter((bId) => {
+			if (group.displayName.includes("Argon") && bId.includes("5h")) {
+				return results.some((r) =>
+					r.groups?.some((g) =>
+						g.displayName.toLowerCase().includes("argon") &&
+						g.buckets.some((b) => (b.bucketId || "").includes("5h") || (b.window || "") === "5h"),
+					),
+				);
+			}
+			return true;
+		});
+
 		output += `### ${group.displayName}\n`;
 		output += "```text\n";
 		output += "ACCOUNT             LIMIT               QUOTA               RESET IN\n";
 
-		for (let b = 0; b < group.bucketIds.length; b++) {
-			const bucketId = group.bucketIds[b]!;
+		for (let b = 0; b < relevantBucketIds.length; b++) {
+			const bucketId = relevantBucketIds[b]!;
 			const bucketName = group.bucketNames[b]!;
 
 			const accountRows = results.map((result) => {
@@ -503,9 +583,16 @@ export function formatQuotaReport(results: AccountQuotaResult[], accounts: Manag
 				let resetStr = "Ready";
 
 				if (result.success && result.groups) {
-					const matchedGroup = result.groups.find((g) =>
-						g.displayName.toLowerCase().includes(group.displayName.toLowerCase().split(" ")[0]!),
-					);
+					const matchedGroup = result.groups.find((g) => {
+						const gName = g.displayName.toLowerCase();
+						if (group.displayName.includes("Gemini Models")) {
+							return gName.includes("gemini") && !gName.includes("argon");
+						}
+						if (group.displayName.includes("Argon")) {
+							return gName.includes("argon") || gName.includes("gemini 4");
+						}
+						return gName.includes("claude");
+					});
 					if (matchedGroup) {
 						const matchedBucket = matchedGroup.buckets.find(
 							(bk) =>
@@ -568,12 +655,20 @@ function findBucket(
 	groupKeyword: string,
 	windowKeyword: "5h" | "weekly",
 	now: number,
-): { pct: number; resetStr: string } {
-	if (!groups) return { pct: 100, resetStr: "Ready" };
-	const group = groups.find((g) =>
-		g.displayName.toLowerCase().includes(groupKeyword.toLowerCase()),
-	);
-	if (!group) return { pct: 100, resetStr: "Ready" };
+): { pct: number; resetStr: string; exists: boolean } {
+	if (!groups) return { pct: 100, resetStr: "Ready", exists: false };
+	const group = groups.find((g) => {
+		const name = g.displayName.toLowerCase();
+		const kw = groupKeyword.toLowerCase();
+		if (kw === "gemini") {
+			return name.includes("gemini") && !name.includes("argon");
+		}
+		if (kw === "argon") {
+			return name.includes("argon") || name.includes("gemini 4");
+		}
+		return name.includes(kw);
+	});
+	if (!group) return { pct: 100, resetStr: "Ready", exists: false };
 
 	const bucket = group.buckets.find((b) => {
 		const id = (b.bucketId || "").toLowerCase();
@@ -593,14 +688,14 @@ function findBucket(
 		);
 	});
 
-	if (!bucket) return { pct: 100, resetStr: "Ready" };
+	if (!bucket) return { pct: 100, resetStr: "Ready", exists: false };
 	const pct = Math.round(bucket.remainingFraction * 100);
 	let resetStr = "Ready";
 	if (pct < 100 && bucket.resetTime) {
 		const rem = new Date(bucket.resetTime).getTime() - now;
 		resetStr = rem > 0 ? formatDuration(rem) : "Ready";
 	}
-	return { pct, resetStr };
+	return { pct, resetStr, exists: true };
 }
 
 function formatModelSection(modelName: string, bucket: { pct: number; resetStr: string }): string {
@@ -858,6 +953,8 @@ export function renderQuotaSidebarPanel(width: number): string[] {
 		const gWk = findBucket(res.groups, "gemini", "weekly", now);
 		const c5h = findBucket(res.groups, "claude", "5h", now);
 		const cWk = findBucket(res.groups, "claude", "weekly", now);
+		const a5h = findBucket(res.groups, "argon", "5h", now);
+		const aWk = findBucket(res.groups, "argon", "weekly", now);
 
 		lines.push(panelDim("  Gemini"));
 		lines.push(renderQuotaBarLine("5h", g5h.pct, g5h.resetStr, barWidth, showSuffix));
@@ -866,6 +963,14 @@ export function renderQuotaSidebarPanel(width: number): string[] {
 		lines.push(panelDim("  Claude"));
 		lines.push(renderQuotaBarLine("5h", c5h.pct, c5h.resetStr, barWidth, showSuffix));
 		lines.push(renderQuotaBarLine("Wk", cWk.pct, cWk.resetStr, barWidth, showSuffix));
+
+		if (aWk.exists || a5h.exists) {
+			lines.push(panelDim("  Gemini 4 Argon"));
+			if (a5h.exists) {
+				lines.push(renderQuotaBarLine("5h", a5h.pct, a5h.resetStr, barWidth, showSuffix));
+			}
+			lines.push(renderQuotaBarLine("Wk", aWk.pct, aWk.resetStr, barWidth, showSuffix));
+		}
 
 		if (acc?.rateLimitResetTimes) {
 			for (const [family, resetTime] of Object.entries(acc.rateLimitResetTimes)) {

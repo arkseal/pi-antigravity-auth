@@ -62,7 +62,8 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  */
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "aicode-consumers";
 
-export const ANTIGRAVITY_VERSION_FALLBACK = "2.12.0";
+export const ANTIGRAVITY_VERSION_FALLBACK = "2.24.0";
+export const ANTIGRAVITY_CHANGELIST = "1000335682";
 
 let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
 let versionLocked = false;
@@ -86,7 +87,7 @@ export const ANTIGRAVITY_VERSION = ANTIGRAVITY_VERSION_FALLBACK;
 export function getAntigravityHubUserAgent(): string {
 	const osType = process.platform === "win32" ? "windows" : process.platform === "darwin" ? "darwin" : "linux";
 	const arch = process.arch === "arm64" ? "arm64" : "amd64";
-	return `antigravity/hub/2.12.0 (aidev_client; os_type=${osType}; arch=${arch}; cl=975213627)`;
+	return `antigravity/hub/${getAntigravityVersion()} (aidev_client; os_type=${osType}; arch=${arch}; cl=${ANTIGRAVITY_CHANGELIST})`;
 }
 
 export interface HeaderSet {

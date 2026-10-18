@@ -5,6 +5,7 @@ import {
 	ANTIGRAVITY_ENDPOINT_PROD,
 	ANTIGRAVITY_ENDPOINT_DAILY,
 	ANTIGRAVITY_DEFAULT_PROJECT_ID,
+	getAntigravityHubUserAgent,
 } from "../src/constants.js";
 
 async function main() {
@@ -27,9 +28,7 @@ async function main() {
 			headers: {
 				Authorization: `Bearer ${accessToken}`,
 				"Content-Type": "application/json",
-				"User-Agent": "antigravity/1.19.4 windows/amd64",
-				"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-				"Client-Metadata": JSON.stringify({ ideType: "ANTIGRAVITY", platform: "WINDOWS", pluginType: "GEMINI" }),
+				"User-Agent": getAntigravityHubUserAgent(),
 			},
 			body: JSON.stringify({ project: projectId }),
 		});
@@ -56,33 +55,30 @@ async function main() {
 
 	// 2. Direct probe against v1internal:generateContent on Daily Sandbox
 	const candidateModels = [
-		"gemini-4-argon",
-		"gemini-4-argon-flash",
-		"gemini-4-argon-pro",
-		"gemini-4",
-		"gemini-4.0",
-		"gemini-4.0-flash",
-		"gemini-4.0-pro",
-		"gemini-4-flash",
-		"gemini-4-pro",
-		"argon",
-		"argon-flash",
-		"argon-pro",
-		"gemini-argon",
-		// Also test reference working models on the same endpoint to confirm endpoint behavior
+		"gemini-4-argon-low",
+		"gemini-4-argon-medium",
+		"gemini-4-argon-high",
 		"gemini-3.8-flash-tiered",
 		"claude-sonnet-5-5-high",
 		"claude-opus-5-5-high",
 	];
 
-	console.log("\nProbing candidate model IDs directly via v1internal:generateContent (Daily Sandbox)...");
+	console.log("\nProbing verified Argon models directly via v1internal:generateContent (Daily Sandbox)...");
 
 	for (const modelId of candidateModels) {
+		const tier = modelId.includes("low") ? "LOW" : modelId.includes("high") ? "HIGH" : "MEDIUM";
 		const envelope = {
 			project: projectId,
 			model: modelId,
 			request: {
 				contents: [{ role: "user", parts: [{ text: "hi" }] }],
+				generationConfig: modelId.includes("argon") ? {
+					maxOutputTokens: 65536,
+					thinkingConfig: {
+						includeThoughts: true,
+						thinkingLevel: tier,
+					},
+				} : undefined,
 			},
 			userAgent: "antigravity",
 			requestId: `probe-${Date.now()}`,
@@ -94,9 +90,7 @@ async function main() {
 				headers: {
 					Authorization: `Bearer ${accessToken}`,
 					"Content-Type": "application/json",
-					"User-Agent": "antigravity/1.19.4 win32/x64",
-					"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
-					"Client-Metadata": JSON.stringify({ ideType: "ANTIGRAVITY", platform: "WINDOWS", pluginType: "GEMINI" }),
+					"User-Agent": getAntigravityHubUserAgent(),
 				},
 				body: JSON.stringify(envelope),
 			});
