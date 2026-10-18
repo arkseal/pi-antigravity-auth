@@ -409,5 +409,14 @@ console.log("\n--- Gemini Schema Cleaning Tests ---");
 	check("title generator function exported", typeof generateConversationTitle === "function");
 }
 
+console.log("\n--- Version Resolution Tests ---");
+{
+	const { compareVersions } = await import("../src/version.js");
+	check("stale 2.0.6 is older than 2.24.0", compareVersions("2.0.6", "2.24.0") < 0);
+	check("2.24.1 is newer than 2.24.0", compareVersions("2.24.1", "2.24.0") > 0);
+	check("equal versions compare 0", compareVersions("2.24.0", "2.24.0") === 0);
+}
+
+
 console.log(failures === 0 ? "\nAll comprehensive tests passed successfully!" : `\n${failures} test(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

@@ -26,6 +26,17 @@ function parseVersion(text: string): string | null {
 	return match ? match[0] : null;
 }
 
+/** Compare two dotted numeric versions. Returns >0 if a is newer than b. */
+export function compareVersions(a: string, b: string): number {
+	const pa = a.split(".").map((n) => Number.parseInt(n, 10) || 0);
+	const pb = b.split(".").map((n) => Number.parseInt(n, 10) || 0);
+	for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+		const diff = (pa[i] ?? 0) - (pb[i] ?? 0);
+		if (diff !== 0) return diff;
+	}
+	return 0;
+}
+
 async function tryFetchVersion(url: string, maxChars?: number): Promise<string | null> {
 	const controller = new AbortController();
 	const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -67,6 +78,15 @@ export async function initAntigravityVersion(): Promise<void> {
 			log.info("version-fetch-failed", { fallback });
 			return;
 		}
+	}
+
+	// The legacy auto-updater endpoint reports a stale "fixed" version (e.g. 2.0.6)
+	// which the API rejects (404 on follow-up requests). Never downgrade below
+	// the version our headers/payloads were verified against.
+	if (compareVersions(version, fallback) < 0) {
+		log.info("version-stale-ignored", { version, source, fallback });
+		setAntigravityVersion(fallback);
+		return;
 	}
 
 	if (version !== fallback) {
