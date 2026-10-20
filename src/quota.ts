@@ -839,7 +839,6 @@ export function formatQuotaStatusText(results: AccountQuotaResult[]): string {
 
 const ANSI_RESET = "\x1b[22;23;24;39m";
 const ANSI_BOLD = "\x1b[1m";
-const ANSI_DIM = "\x1b[2m";
 
 const PANEL_COLORS = {
 	accent: "\x1b[38;2;254;188;56m", // amber/yellow
@@ -850,12 +849,24 @@ const PANEL_COLORS = {
 	text: "\x1b[38;2;0;175;175m", // cyan
 };
 
+let _quotaTheme: any = null;
+
+export function setQuotaTheme(t: any): void {
+	_quotaTheme = t;
+}
+
 function panelBold(text: string): string {
+	if (_quotaTheme && typeof _quotaTheme.bold === "function") {
+		return _quotaTheme.bold(text);
+	}
 	return `${ANSI_BOLD}${text}${ANSI_RESET}`;
 }
 
 function panelDim(text: string): string {
-	return `${ANSI_DIM}${text}${ANSI_RESET}`;
+	if (_quotaTheme && typeof _quotaTheme.fg === "function") {
+		return _quotaTheme.fg("muted", text);
+	}
+	return `${PANEL_COLORS.muted}${text}${ANSI_RESET}`;
 }
 
 function panelColor(color: string, text: string): string {
@@ -1126,6 +1137,9 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 	pi.on("session_start", async (_event, ctx) => {
 		syncSearchTools(pi, ctx.model);
 		if (ctx.hasUI) {
+			if ((ctx.ui as any)?.theme) {
+				setQuotaTheme((ctx.ui as any).theme);
+			}
 			if (!isSidebarTuiAvailable()) {
 				ctx.ui.notify(
 					"Antigravity Quota: pi-sidebar-tui is required for sidebar quota display. Install and enable pi-sidebar-tui to view quota.",
@@ -1145,6 +1159,9 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 
 	pi.on("turn_end", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
+		if ((ctx.ui as any)?.theme) {
+			setQuotaTheme((ctx.ui as any).theme);
+		}
 		const { results } = await refreshCachedQuota();
 		notifySidebarRender();
 		if (isStatusActive) {

@@ -46,6 +46,11 @@ test("renderQuotaSidebarPanel renders beautiful header and respects width", () =
 
 	const wideLines = renderQuotaSidebarPanel(60);
 	assert.ok(wideLines[0]!.includes("Quota"));
+
+	// Ensure faint/thin ANSI code (\x1b[2m) is never used, which causes thin/spindly fonts in terminals
+	for (const line of lines) {
+		assert.ok(!line.includes("\x1b[2m"), "Line should not contain \\x1b[2m (faint font weight)");
+	}
 });
 
 test("notifySidebarRender safely executes without error", () => {
