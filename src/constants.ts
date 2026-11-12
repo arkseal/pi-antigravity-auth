@@ -62,8 +62,8 @@ export const GEMINI_CLI_ENDPOINT = ANTIGRAVITY_ENDPOINT_PROD;
  */
 export const ANTIGRAVITY_DEFAULT_PROJECT_ID = "aicode-consumers";
 
-export const ANTIGRAVITY_VERSION_FALLBACK = "2.24.0";
-export const ANTIGRAVITY_CHANGELIST = "1000335682";
+export const ANTIGRAVITY_VERSION_FALLBACK = "2.31.2";
+export const ANTIGRAVITY_CHANGELIST = "1019359392";
 
 let antigravityVersion = ANTIGRAVITY_VERSION_FALLBACK;
 let versionLocked = false;
@@ -100,7 +100,7 @@ export type HeaderStyle = "antigravity" | "gemini-cli" | "agy-sdk";
 
 export function getAntigravityHeaders(): HeaderSet & { "Client-Metadata": string } {
 	return {
-		"User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/${getAntigravityVersion()} Chrome/138.0.7204.235 Electron/37.3.1 Safari/537.36`,
+		"User-Agent": `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Antigravity/${getAntigravityVersion()} Chrome/152.0.7977.167 Electron/44.9.1 Safari/537.36`,
 		"X-Goog-Api-Client": "google-cloud-sdk vscode_cloudshelleditor/0.1",
 		"Client-Metadata": `{"ideType":"ANTIGRAVITY","platform":"${process.platform === "win32" ? "WINDOWS" : "MACOS"}","pluginType":"GEMINI"}`,
 	};

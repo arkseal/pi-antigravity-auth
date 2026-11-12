@@ -265,12 +265,18 @@ export function streamAntigravity(
 			const thinkingOff = (options?.reasoning as unknown as string) === "off";
 			const thinkingRequested =
 				!thinkingOff && (Boolean(options?.reasoning) || resolved.thinkingLevel !== undefined);
-			if (model.reasoning && thinkingRequested) {
+			if ((model.reasoning && thinkingRequested) || (!thinkingOff && resolved.thinkingBudget !== undefined && resolved.thinkingBudget > 0)) {
 				const thinkingConfig: Record<string, unknown> = { includeThoughts: true };
 				if (resolved.thinkingLevel !== undefined) {
-					thinkingConfig.thinkingLevel = String(resolved.thinkingLevel).toUpperCase();
+					if (typeof resolved.thinkingLevel === "number") {
+						thinkingConfig.thinkingLevel = resolved.thinkingLevel;
+					} else if (/^\d+$/.test(resolved.thinkingLevel)) {
+						thinkingConfig.thinkingLevel = parseInt(resolved.thinkingLevel, 10);
+					} else {
+						thinkingConfig.thinkingLevel = resolved.thinkingLevel.toUpperCase();
+					}
 				}
-				if (resolved.thinkingBudget !== undefined) {
+				if (resolved.thinkingBudget !== undefined && resolved.thinkingBudget > 0) {
 					thinkingConfig.thinkingBudget = resolved.thinkingBudget;
 				}
 				generationConfig.thinkingConfig = thinkingConfig;
@@ -564,6 +570,15 @@ async function consumeStream(
 					typeof part.thoughtSignature === "string" && part.thoughtSignature
 						? part.thoughtSignature
 						: undefined;
+
+				if (text === "" && signature && currentBlock) {
+					if (currentBlock.type === "thinking") {
+						currentBlock.thinkingSignature = signature;
+					} else {
+						(currentBlock as Record<string, unknown>).thoughtSignature = signature;
+					}
+					continue;
+				}
 
 				if (!currentBlock || currentBlock.type !== (isThinking ? "thinking" : "text")) {
 					closeCurrentBlock();

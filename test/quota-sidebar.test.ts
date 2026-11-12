@@ -10,6 +10,7 @@ import {
 	fetchLiveModelQuotas,
 	getLocalLanguageServerInfo,
 	fetchLocalLanguageServerQuota,
+	registerQuotaFeature,
 } from "../src/quota.js";
 
 test("isSidebarTuiAvailable returns boolean", () => {
@@ -35,17 +36,17 @@ test("registerQuotaSidebarPanelWithTui registers into global panels", () => {
 test("renderQuotaSidebarPanel renders beautiful header and respects width", () => {
 	const lines = renderQuotaSidebarPanel(40);
 	assert.ok(lines.length >= 2, "Should have header and separator");
-	assert.ok(lines[0]!.includes("Quota"), "Header should contain 'Quota'");
+	assert.ok(lines[0]!.includes("Antigravity Usage"), "Header should contain 'Antigravity Usage'");
 
 	// Check separator width
 	assert.ok(lines[1]!.includes("───"), "Separator should contain line characters");
 
 	// Test with various widths
 	const narrowLines = renderQuotaSidebarPanel(30);
-	assert.ok(narrowLines[0]!.includes("Quota"));
+	assert.ok(narrowLines[0]!.includes("Antigravity Usage"));
 
 	const wideLines = renderQuotaSidebarPanel(60);
-	assert.ok(wideLines[0]!.includes("Quota"));
+	assert.ok(wideLines[0]!.includes("Antigravity Usage"));
 
 	// Ensure faint/thin ANSI code (\x1b[2m) is never used, which causes thin/spindly fonts in terminals
 	for (const line of lines) {
@@ -313,4 +314,59 @@ test("renderQuotaSidebarPanel renders separate Gemini 4 Argon quota", () => {
 	const text = lines.map((l) => l.replace(/\x1b\[[0-9;]*m/g, "")).join("\n");
 	assert.ok(text.includes("Gemini 4 Argon"), "Expected Gemini 4 Argon section in sidebar");
 	assert.ok(text.includes("98%"), "Expected 98% bar for Argon");
+});
+
+test("registerQuotaFeature only refreshes quota for antigravity models", async () => {
+	const events = new Map<string, (...args: any[]) => any>();
+	const commands = new Map<string, any>();
+	const tools = new Map<string, any>();
+	let activeTools: string[] = ["read"];
+
+	const fakePi = {
+		on: (event: string, handler: (...args: any[]) => any) => events.set(event, handler),
+		registerCommand: (name: string, cmd: any) => commands.set(name, cmd),
+		registerTool: (tool: any) => tools.set(tool.name, tool),
+		getActiveTools: () => activeTools,
+		setActiveTools: (t: string[]) => { activeTools = t; },
+		getAllTools: () => [{ name: "antigravity_search" }, { name: "web_search" }],
+	};
+
+	let refreshCalls = 0;
+	const originalFetch = globalThis.fetch;
+	globalThis.fetch = (async (url: any) => {
+		if (String(url).includes("retrieveUserQuotaSummary") || String(url).includes("fetchAvailableModels")) {
+			refreshCalls++;
+			return new Response(JSON.stringify({ groups: [] }), { status: 200 });
+		}
+		return originalFetch(url);
+	}) as typeof fetch;
+
+	try {
+		registerQuotaFeature(fakePi as any);
+
+		const fakeCtx = {
+			hasUI: true,
+			mode: "tui",
+			model: { provider: "openai" },
+			ui: {
+				notify: () => {},
+				setStatus: () => {},
+				theme: null,
+			},
+		};
+
+		// 1. session_start with non-antigravity model -> should NOT fetch quota
+		await events.get("session_start")!({}, fakeCtx);
+		assert.equal(refreshCalls, 0, "session_start on non-antigravity model must not refresh quota");
+
+		// 2. turn_end with non-antigravity model -> should NOT fetch quota
+		await events.get("turn_end")!({}, fakeCtx);
+		assert.equal(refreshCalls, 0, "turn_end on non-antigravity model must not refresh quota");
+
+		// 3. model_select to non-antigravity model -> should NOT fetch quota
+		await events.get("model_select")!({ model: { provider: "openai" } }, fakeCtx);
+		assert.equal(refreshCalls, 0, "model_select on non-antigravity model must not refresh quota");
+	} finally {
+		globalThis.fetch = originalFetch;
+	}
 });

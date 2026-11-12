@@ -3,13 +3,13 @@
  * Ported from opencode-antigravity-auth-updated/src/plugin/transform/model-resolver.ts
  */
 
-export type ThinkingTier = "minimal" | "low" | "medium" | "high" | "max";
+export type ThinkingTier = "minimal" | "low" | "medium" | "high" | "extra" | "xhigh" | "max";
 
 export interface ResolvedBackendModel {
 	/** Model id sent to the Antigravity API. */
 	model: string;
-	/** Gemini 3-style string thinking level (sent via thinkingConfig.thinkingLevel). */
-	thinkingLevel?: string;
+	/** Gemini 3/4-style thinking level (sent via thinkingConfig.thinkingLevel). */
+	thinkingLevel?: string | number;
 	/** Numeric thinking budget (sent via thinkingConfig.thinkingBudget, Claude style). */
 	thinkingBudget?: number;
 	/** Max output tokens override for this backend model. */
@@ -74,9 +74,27 @@ export const MODEL_ALIASES: Record<string, string> = {
 	"argon-low": "gemini-4-argon-low",
 	"argon-medium": "gemini-4-argon-medium",
 	"argon-high": "gemini-4-argon-high",
+	"gemini-4-hydrogen": "gemini-4-hydrogen-high",
+	"gemini-4-hydrogen-low": "gemini-4-hydrogen-low",
+	"gemini-4-hydrogen-medium": "gemini-4-hydrogen-medium",
+	"gemini-4-hydrogen-high": "gemini-4-hydrogen-high",
+	"gemini-4-hydrogen-extra": "gemini-4-hydrogen-xhigh",
+	"gemini-4-hydrogen-xhigh": "gemini-4-hydrogen-xhigh",
+	"gemini-hydrogen": "gemini-4-hydrogen-high",
+	"gemini-hydrogen-low": "gemini-4-hydrogen-low",
+	"gemini-hydrogen-medium": "gemini-4-hydrogen-medium",
+	"gemini-hydrogen-high": "gemini-4-hydrogen-high",
+	"gemini-hydrogen-extra": "gemini-4-hydrogen-xhigh",
+	"gemini-hydrogen-xhigh": "gemini-4-hydrogen-xhigh",
+	"hydrogen": "gemini-4-hydrogen-high",
+	"hydrogen-low": "gemini-4-hydrogen-low",
+	"hydrogen-medium": "gemini-4-hydrogen-medium",
+	"hydrogen-high": "gemini-4-hydrogen-high",
+	"hydrogen-extra": "gemini-4-hydrogen-xhigh",
+	"hydrogen-xhigh": "gemini-4-hydrogen-xhigh",
 };
 
-const TIER_REGEX = /-(minimal|low|medium|high|max)$/i;
+const TIER_REGEX = /-(minimal|low|medium|high|extra|xhigh|max)$/i;
 const QUOTA_PREFIX_REGEX = /^antigravity-/i;
 const GEMINI_31_PRO_REGEX = /^gemini-3\.1-pro(?:-(low|high))?$/i;
 const GEMINI_31_PRO_LOW_MODEL = "gemini-3.1-pro-low";
@@ -91,6 +109,7 @@ const GEMINI_37_FLASH_TIERED_MODEL = "gemini-3.7-flash-tiered";
 export const GEMINI_38_FLASH_REGEX = /^gemini-3\.8-flash(?:-(minimal|low|medium|high))?$/i;
 const GEMINI_38_FLASH_TIERED_MODEL = "gemini-3.8-flash-tiered";
 export const GEMINI_4_ARGON_REGEX = /^(?:gemini-4-argon|gemini-argon|argon)(?:-(minimal|low|medium|high|max))?$/i;
+export const GEMINI_4_HYDROGEN_REGEX = /^(?:gemini-4-hydrogen|gemini-hydrogen|hydrogen)(?:-(minimal|low|medium|high|extra|xhigh|max))?$/i;
 
 export function isClaudeModel(model: string): boolean {
 	return model.toLowerCase().includes("claude");
@@ -103,7 +122,12 @@ export function isClaudeThinkingModel(model: string): boolean {
 
 export function isArgonModel(model: string): boolean {
 	const lower = model.toLowerCase();
-	return lower.includes("argon") || lower.includes("gemini-4");
+	return lower.includes("argon");
+}
+
+export function isHydrogenModel(model: string): boolean {
+	const lower = model.toLowerCase();
+	return lower.includes("hydrogen");
 }
 
 export function isImageGenerationModel(model: string): boolean {
@@ -182,7 +206,6 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 		return {
 			model: backendModel,
 			thinkingLevel,
-			thinkingBudget: 0,
 			maxOutputTokens: 128000,
 		};
 	}
@@ -199,15 +222,41 @@ export function resolveBackendModel(modelId: string, reasoning?: string): Resolv
 		};
 	}
 
+	// Gemini 4 Hydrogen
+	if (GEMINI_4_HYDROGEN_REGEX.test(lower)) {
+		const rawTier = (reasoning ?? lower.match(TIER_REGEX)?.[1] ?? "high").toLowerCase();
+		let backendModel: string;
+		let thinkingLevel: string | number;
+
+		if (rawTier === "extra" || rawTier === "xhigh" || rawTier === "max") {
+			backendModel = "gemini-4-hydrogen-xhigh";
+			thinkingLevel = 100;
+		} else if (rawTier === "medium") {
+			backendModel = "gemini-4-hydrogen-medium";
+			thinkingLevel = "MEDIUM";
+		} else if (rawTier === "low" || rawTier === "minimal") {
+			backendModel = "gemini-4-hydrogen-low";
+			thinkingLevel = "LOW";
+		} else {
+			backendModel = "gemini-4-hydrogen-high";
+			thinkingLevel = "HIGH";
+		}
+
+		return {
+			model: backendModel,
+			thinkingLevel,
+			maxOutputTokens: 262144,
+		};
+	}
+
 	// Gemini 3.8 Flash
 	if (GEMINI_38_FLASH_REGEX.test(lower)) {
 		const level = normalizeThinkingLevel(reasoning ?? (lower.match(TIER_REGEX)?.[1] ?? "high"));
 		const tier = level === "minimal" ? "low" : level;
 		const backendModel = `gemini-3.8-flash-${tier}`;
-		const thinkingBudget = tier === "high" ? -1 : tier === "medium" ? 4000 : 1000;
 		return {
 			model: backendModel,
-			thinkingBudget,
+			thinkingLevel: tier.toUpperCase(),
 			maxOutputTokens: 65536,
 		};
 	}

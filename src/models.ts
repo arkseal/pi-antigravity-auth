@@ -5,9 +5,10 @@
 import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
 
 export type { ThinkingTier, ResolvedBackendModel } from "./model-resolver.js";
-export { resolveBackendModel, getModelFamily, isClaudeModel, isClaudeThinkingModel, isArgonModel, isImageGenerationModel } from "./model-resolver.js";
+export { resolveBackendModel, getModelFamily, isClaudeModel, isClaudeThinkingModel, isArgonModel, isHydrogenModel, isImageGenerationModel } from "./model-resolver.js";
 
 const GEMINI_LIMITS = { context: 1_048_576, output: 65_536 };
+const GEMINI_HYDROGEN_LIMITS = { context: 1_048_576, output: 262_144 };
 const CLAUDE_LIMITS = { context: 1_000_000, output: 128_000 };
 const GPT_OSS_LIMITS = { context: 131_072, output: 32_768 };
 const FREE_COST = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
@@ -103,6 +104,23 @@ export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
 			high: "high",
 			xhigh: null,
 			max: null,
+		},
+	},
+	{
+		id: "gemini-4-hydrogen",
+		name: "Gemini 4 Hydrogen (Antigravity)",
+		reasoning: true,
+		input: ["text", "image"],
+		cost: FREE_COST,
+		contextWindow: GEMINI_HYDROGEN_LIMITS.context,
+		maxTokens: GEMINI_HYDROGEN_LIMITS.output,
+		thinkingLevelMap: {
+			minimal: null,
+			low: "low",
+			medium: "medium",
+			high: "high",
+			xhigh: "extra",
+			max: "extra",
 		},
 	},
 	{

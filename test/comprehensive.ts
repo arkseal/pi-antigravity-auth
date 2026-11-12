@@ -21,6 +21,7 @@ import {
 	isClaudeThinkingModel,
 	isImageGenerationModel,
 	isArgonModel,
+	isHydrogenModel,
 } from "../src/model-resolver.js";
 import {
 	generateFingerprint,
@@ -114,9 +115,9 @@ console.log("\n--- Model Resolver Tests ---");
 {
 	// Gemini 3.8 Flash
 	const g38 = resolveBackendModel("gemini-3.8-flash", "high");
-	check("gemini-3.8-flash high", g38.model === "gemini-3.8-flash-high" && g38.thinkingBudget === -1);
+	check("gemini-3.8-flash high", g38.model === "gemini-3.8-flash-high" && g38.thinkingLevel === "HIGH");
 	const g38Min = resolveBackendModel("gemini-3.8-flash", "minimal");
-	check("gemini-3.8-flash minimal mapped to low", g38Min.model === "gemini-3.8-flash-low" && g38Min.thinkingBudget === 1000);
+	check("gemini-3.8-flash minimal mapped to low", g38Min.model === "gemini-3.8-flash-low" && g38Min.thinkingLevel === "LOW");
 
 	// Gemini 3.7 Flash
 	const g37 = resolveBackendModel("gemini-3.7-flash", "medium");
@@ -144,11 +145,11 @@ console.log("\n--- Model Resolver Tests ---");
 
 	// Claude Models (5.5 & legacy)
 	const opus55High = resolveBackendModel("claude-opus-5-5-thinking", "high");
-	check("claude-opus-5-5 high backend", opus55High.model === "claude-opus-5-5-high" && opus55High.thinkingLevel === "HIGH" && opus55High.thinkingBudget === 0);
+	check("claude-opus-5-5 high backend", opus55High.model === "claude-opus-5-5-high" && opus55High.thinkingLevel === "HIGH" && !opus55High.thinkingBudget);
 	const opus55Low = resolveBackendModel("claude-opus-5-5-thinking", "low");
-	check("claude-opus-5-5 low backend", opus55Low.model === "claude-opus-5-5-low" && opus55Low.thinkingLevel === "LOW" && opus55Low.thinkingBudget === 0);
+	check("claude-opus-5-5 low backend", opus55Low.model === "claude-opus-5-5-low" && opus55Low.thinkingLevel === "LOW" && !opus55Low.thinkingBudget);
 	const sonnet55 = resolveBackendModel("claude-sonnet-5-5");
-	check("claude-sonnet-5-5 default backend", sonnet55.model === "claude-sonnet-5-5-high");
+	check("claude-sonnet-5-5 default backend", sonnet55.model === "claude-sonnet-5-5-high" && sonnet55.thinkingLevel === "HIGH");
 
 	const opusHigh = resolveBackendModel("claude-opus-4-6-thinking", "high");
 	check("claude opus high budget 32768", opusHigh.thinkingBudget === 32768);
@@ -167,6 +168,22 @@ console.log("\n--- Model Resolver Tests ---");
 	const argonHigh = resolveBackendModel("gemini-4-argon", "high");
 	check("argon high backend", argonHigh.model === "gemini-4-argon-high" && argonHigh.thinkingLevel === "HIGH");
 
+	// Gemini 4 Hydrogen Models
+	const hydrogenDefault = resolveBackendModel("gemini-4-hydrogen");
+	check("hydrogen default high backend", hydrogenDefault.model === "gemini-4-hydrogen-high" && hydrogenDefault.thinkingLevel === "HIGH" && hydrogenDefault.maxOutputTokens === 262144);
+	const hydrogenLow = resolveBackendModel("gemini-4-hydrogen", "low");
+	check("hydrogen low backend", hydrogenLow.model === "gemini-4-hydrogen-low" && hydrogenLow.thinkingLevel === "LOW");
+	const hydrogenMed = resolveBackendModel("gemini-4-hydrogen", "medium");
+	check("hydrogen medium backend", hydrogenMed.model === "gemini-4-hydrogen-medium" && hydrogenMed.thinkingLevel === "MEDIUM");
+	const hydrogenHigh = resolveBackendModel("gemini-4-hydrogen", "high");
+	check("hydrogen high backend", hydrogenHigh.model === "gemini-4-hydrogen-high" && hydrogenHigh.thinkingLevel === "HIGH");
+	const hydrogenExtra = resolveBackendModel("gemini-4-hydrogen", "extra");
+	check("hydrogen extra backend", hydrogenExtra.model === "gemini-4-hydrogen-xhigh" && hydrogenExtra.thinkingLevel === 100 && hydrogenExtra.maxOutputTokens === 262144);
+	const hydrogenXhigh = resolveBackendModel("gemini-4-hydrogen", "xhigh");
+	check("hydrogen xhigh backend", hydrogenXhigh.model === "gemini-4-hydrogen-xhigh" && hydrogenXhigh.thinkingLevel === 100);
+	const hydrogenAlias = resolveBackendModel("hydrogen-extra");
+	check("hydrogen-extra alias", hydrogenAlias.model === "gemini-4-hydrogen-xhigh" && hydrogenAlias.thinkingLevel === 100);
+
 	// Image Model
 	const img = resolveBackendModel("gemini-3.1-flash-image");
 	check("image model resolved", img.model === "gemini-3.1-flash-image" && img.isImageModel === true);
@@ -179,6 +196,9 @@ console.log("\n--- Model Resolver Tests ---");
 	check("isImageGenerationModel true", isImageGenerationModel("gemini-3.1-flash-image"));
 	check("isArgonModel true", isArgonModel("gemini-4-argon"));
 	check("isArgonModel false", !isArgonModel("gemini-3.8-flash"));
+	check("isArgonModel false for hydrogen", !isArgonModel("gemini-4-hydrogen"));
+	check("isHydrogenModel true", isHydrogenModel("gemini-4-hydrogen"));
+	check("isHydrogenModel false for argon", !isHydrogenModel("gemini-4-argon"));
 	check("getModelFamily claude", getModelFamily("claude-opus-4-6-thinking") === "claude");
 	check("getModelFamily flash", getModelFamily("gemini-3.8-flash") === "gemini-flash");
 	check("getModelFamily pro", getModelFamily("gemini-3.1-pro") === "gemini-pro");

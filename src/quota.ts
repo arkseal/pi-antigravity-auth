@@ -16,6 +16,7 @@ import {
 	ANTIGRAVITY_LOAD_ENDPOINTS,
 	ANTIGRAVITY_QUOTA_ENDPOINTS,
 	ANTIGRAVITY_PROVIDER_ID,
+	ANTIGRAVITY_DEFAULT_PROJECT_ID,
 	getAntigravityHubUserAgent,
 } from "./constants.js";
 import {
@@ -31,8 +32,6 @@ import { openBrowser } from "./browser.js";
 
 export const CLOUDCODE_METADATA = {
 	ideType: "ANTIGRAVITY",
-	platform: "PLATFORM_UNSPECIFIED",
-	pluginType: "GEMINI",
 };
 
 export interface QuotaBucket {
@@ -107,7 +106,7 @@ export async function fetchUserQuotaSummary(
 	accessToken: string,
 	projectId?: string,
 ): Promise<UserQuotaSummaryResponse> {
-	const payload = projectId ? { project: projectId } : {};
+	const payload = { project: projectId || ANTIGRAVITY_DEFAULT_PROJECT_ID };
 	const endpoints = ANTIGRAVITY_QUOTA_ENDPOINTS;
 
 	let lastStatus = 0;
@@ -170,6 +169,7 @@ export interface AvailableModelQuota {
 	gemini?: { remainingFraction: number; resetTime?: string };
 	claude?: { remainingFraction: number; resetTime?: string };
 	argon?: { remainingFraction: number; resetTime?: string };
+	hydrogen?: { remainingFraction: number; resetTime?: string };
 }
 
 export async function fetchLiveModelQuotas(
@@ -186,7 +186,7 @@ export async function fetchLiveModelQuotas(
 					"Content-Type": "application/json",
 					"User-Agent": getAntigravityHubUserAgent(),
 				},
-				body: JSON.stringify(projectId ? { project: projectId } : {}),
+				body: JSON.stringify({ project: projectId || ANTIGRAVITY_DEFAULT_PROJECT_ID }),
 			});
 			if (!res.ok) continue;
 			const data = (await res.json()) as {
@@ -206,6 +206,11 @@ export async function fetchLiveModelQuotas(
 				models["gemini-4-argon-medium"] ||
 				models["gemini-4-argon-low"] ||
 				models["gemini-4-argon-high"];
+			const hydrogenModel =
+				models["gemini-4-hydrogen-high"] ||
+				models["gemini-4-hydrogen-medium"] ||
+				models["gemini-4-hydrogen-low"] ||
+				models["gemini-4-hydrogen-xhigh"];
 			const result: AvailableModelQuota = {};
 			if (geminiModel?.quotaInfo && typeof geminiModel.quotaInfo.remainingFraction === "number") {
 				result.gemini = {
@@ -225,7 +230,13 @@ export async function fetchLiveModelQuotas(
 					resetTime: argonModel.quotaInfo.resetTime,
 				};
 			}
-			if (result.gemini || result.claude || result.argon) {
+			if (hydrogenModel?.quotaInfo && typeof hydrogenModel.quotaInfo.remainingFraction === "number") {
+				result.hydrogen = {
+					remainingFraction: hydrogenModel.quotaInfo.remainingFraction,
+					resetTime: hydrogenModel.quotaInfo.resetTime,
+				};
+			}
+			if (result.gemini || result.claude || result.argon || result.hydrogen) {
 				return result;
 			}
 		} catch {
@@ -524,7 +535,7 @@ export function getLocalRateLimitInfo(accounts: ManagedAccount[]): string {
 }
 
 export function formatQuotaReport(results: AccountQuotaResult[], accounts: ManagedAccount[]): string {
-	let output = "# ☁️ Antigravity Quota Status\n\n";
+	let output = "# ☁️ Antigravity Usage Status\n\n";
 
 	const errors = results.filter((r) => !r.success);
 	if (errors.length > 0) {
@@ -572,7 +583,7 @@ export function formatQuotaReport(results: AccountQuotaResult[], accounts: Manag
 
 		output += `### ${group.displayName}\n`;
 		output += "```text\n";
-		output += "ACCOUNT             LIMIT               QUOTA               RESET IN\n";
+		output += "ACCOUNT             LIMIT               USAGE               RESET IN\n";
 
 		for (let b = 0; b < relevantBucketIds.length; b++) {
 			const bucketId = relevantBucketIds[b]!;
@@ -712,9 +723,9 @@ export function formatSingleLineQuota(
 	const now = Date.now();
 	if (results.length === 0) {
 		if (accounts && accounts.length > 0) {
-			return "Usage:  Fetching quota...";
+			return "Antigravity Usage:  Fetching usage...";
 		}
-		return "Usage:  No accounts configured (run /login antigravity)";
+		return "Antigravity Usage:  No accounts configured (run /login antigravity)";
 	}
 
 	const hasMultiple = results.length > 1;
@@ -745,7 +756,7 @@ export function formatSingleLineQuota(
 		accountParts.push(`${prefix}${geminiStr}   │   ${claudeStr}`);
 	}
 
-	return `Usage:  ${accountParts.join("   ┃   ")}`;
+	return `Antigravity Usage:  ${accountParts.join("   ┃   ")}`;
 }
 
 export function formatTwoLineQuota(
@@ -757,13 +768,13 @@ export function formatTwoLineQuota(
 	if (results.length === 0) {
 		if (accounts && accounts.length > 0) {
 			return [
-				"Usage:  5-Hour   │   Fetching quota...",
-				"Usage:  Weekly   │   Fetching quota...",
+				"Antigravity Usage:  5-Hour   │   Fetching usage...",
+				"Antigravity Usage:  Weekly   │   Fetching usage...",
 			];
 		}
 		return [
-			"Usage:  5-Hour   │   No accounts configured",
-			"Usage:  Weekly   │   Run /login antigravity to authenticate",
+			"Antigravity Usage:  5-Hour   │   No accounts configured",
+			"Antigravity Usage:  Weekly   │   Run /login antigravity to authenticate",
 		];
 	}
 
@@ -795,8 +806,8 @@ export function formatTwoLineQuota(
 	}
 
 	return [
-		`Usage:  5-Hour   │   ${line5hParts.join("   ┃   ")}`,
-		`Usage:  Weekly   │   ${lineWkParts.join("   ┃   ")}`,
+		`Antigravity Usage:  5-Hour   │   ${line5hParts.join("   ┃   ")}`,
+		`Antigravity Usage:  Weekly   │   ${lineWkParts.join("   ┃   ")}`,
 	];
 }
 
@@ -815,9 +826,9 @@ export function formatCompactQuotaWidget(
 }
 
 export function formatQuotaStatusText(results: AccountQuotaResult[]): string {
-	if (results.length === 0) return "Usage: -";
+	if (results.length === 0) return "Antigravity Usage: -";
 	const active = results.filter((r) => r.success);
-	if (active.length === 0) return "Usage: ⚠️ error";
+	if (active.length === 0) return "Antigravity Usage: ⚠️ error";
 
 	const parts: string[] = [];
 	for (const res of active) {
@@ -834,7 +845,7 @@ export function formatQuotaStatusText(results: AccountQuotaResult[]): string {
 		}
 		parts.push(`Gem: ${minGemini}% · Cld: ${minClaude}%`);
 	}
-	return `Usage: ${parts.join(" | ")}`;
+	return `Antigravity Usage: ${parts.join(" | ")}`;
 }
 
 const ANSI_RESET = "\x1b[22;23;24;39m";
@@ -908,7 +919,7 @@ function renderQuotaBarLine(
 export function renderQuotaSidebarPanel(width: number): string[] {
 	const safeWidth = Math.max(20, width);
 	const lines: string[] = [
-		panelBold(" Quota"),
+		panelBold(" Antigravity Usage"),
 		panelDim("─".repeat(safeWidth)),
 	];
 
@@ -918,7 +929,7 @@ export function renderQuotaSidebarPanel(width: number): string[] {
 	}
 
 	if (cachedResults.length === 0) {
-		lines.push(panelDim(" (fetching quota…)"));
+		lines.push(panelDim(isFetchingQuota ? " (fetching usage…)" : " (run /quota to check)"));
 		return lines;
 	}
 
@@ -1045,6 +1056,7 @@ export function notifySidebarRender(): void {
 let cachedResults: AccountQuotaResult[] = [];
 let cachedAccounts: ManagedAccount[] = [];
 let isStatusActive = false;
+let isFetchingQuota = false;
 
 export function _setCachedQuotaForTesting(
 	results: AccountQuotaResult[],
@@ -1058,35 +1070,40 @@ export async function refreshCachedQuota(): Promise<{
 	results: AccountQuotaResult[];
 	accounts: ManagedAccount[];
 }> {
-	const manager = await getAccountManager();
-	const accounts = manager.getAccounts();
-	cachedAccounts = accounts;
-	if (accounts.length === 0) {
-		cachedResults = [];
-		notifySidebarRender();
-		return { results: [], accounts: [] };
-	}
-
-	const results: AccountQuotaResult[] = [];
-	for (let i = 0; i < accounts.length; i++) {
-		const acc = accounts[i]!;
-		if (!acc.enabled) continue;
-		if (i > 0) await new Promise((r) => setTimeout(r, 200));
-		try {
-			const { accessToken } = await manager.getAccessTokenForAccount(acc);
-			results.push(await fetchAccountQuota(acc, accessToken));
-		} catch (error) {
-			results.push({
-				email: acc.email || `account #${acc.index + 1}`,
-				success: false,
-				error: error instanceof Error ? error.message : String(error),
-			});
-		}
-	}
-
-	cachedResults = results;
+	isFetchingQuota = true;
 	notifySidebarRender();
-	return { results, accounts };
+	try {
+		const manager = await getAccountManager();
+		const accounts = manager.getAccounts();
+		cachedAccounts = accounts;
+		if (accounts.length === 0) {
+			cachedResults = [];
+			return { results: [], accounts: [] };
+		}
+
+		const results: AccountQuotaResult[] = [];
+		for (let i = 0; i < accounts.length; i++) {
+			const acc = accounts[i]!;
+			if (!acc.enabled) continue;
+			if (i > 0) await new Promise((r) => setTimeout(r, 200));
+			try {
+				const { accessToken } = await manager.getAccessTokenForAccount(acc);
+				results.push(await fetchAccountQuota(acc, accessToken));
+			} catch (error) {
+				results.push({
+					email: acc.email || `account #${acc.index + 1}`,
+					success: false,
+					error: error instanceof Error ? error.message : String(error),
+				});
+			}
+		}
+
+		cachedResults = results;
+		return { results, accounts };
+	} finally {
+		isFetchingQuota = false;
+		notifySidebarRender();
+	}
 }
 
 export function applyWidget(_ctx: ExtensionContext) {
@@ -1130,6 +1147,10 @@ export function syncSearchTools(
 	}
 }
 
+function isAntigravityModel(model?: { provider?: string }, providerId = ANTIGRAVITY_PROVIDER_ID): boolean {
+	return model?.provider === providerId;
+}
+
 export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY_PROVIDER_ID) {
 	// Register quota panel into pi-sidebar-tui
 	registerQuotaSidebarPanelWithTui();
@@ -1140,25 +1161,29 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 			if ((ctx.ui as any)?.theme) {
 				setQuotaTheme((ctx.ui as any).theme);
 			}
-			if (!isSidebarTuiAvailable()) {
+			const isAntigravity = isAntigravityModel(ctx.model, _providerId);
+			if (isAntigravity && !isSidebarTuiAvailable()) {
 				ctx.ui.notify(
-					"Antigravity Quota: pi-sidebar-tui is required for sidebar quota display. Install and enable pi-sidebar-tui to view quota.",
+					"Antigravity Usage: pi-sidebar-tui is required for sidebar usage display. Install and enable pi-sidebar-tui to view usage.",
 					"warning",
 				);
 			}
 			const manager = await getAccountManager();
 			cachedAccounts = manager.getAccounts();
 			notifySidebarRender();
-			const { results } = await refreshCachedQuota();
-			notifySidebarRender();
-			if (isStatusActive) {
-				ctx.ui.setStatus("antigravity-quota", formatQuotaStatusText(results));
+			if (isAntigravity) {
+				const { results } = await refreshCachedQuota();
+				notifySidebarRender();
+				if (isStatusActive) {
+					ctx.ui.setStatus("antigravity-quota", formatQuotaStatusText(results));
+				}
 			}
 		}
 	});
 
 	pi.on("turn_end", async (_event, ctx) => {
 		if (!ctx.hasUI) return;
+		if (!isAntigravityModel(ctx.model, _providerId)) return;
 		if ((ctx.ui as any)?.theme) {
 			setQuotaTheme((ctx.ui as any).theme);
 		}
@@ -1169,14 +1194,25 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 		}
 	});
 
-	pi.on("model_select", async (event, _ctx) => {
-		syncSearchTools(pi, (event as { model?: { provider?: string } }).model);
+	pi.on("model_select", async (event, ctx) => {
+		const model = (event as { model?: { provider?: string } })?.model;
+		syncSearchTools(pi, model);
+		if (isAntigravityModel(model, _providerId)) {
+			if (ctx?.hasUI && (ctx.ui as any)?.theme) {
+				setQuotaTheme((ctx.ui as any).theme);
+			}
+			const { results } = await refreshCachedQuota();
+			notifySidebarRender();
+			if (isStatusActive && ctx?.hasUI) {
+				ctx.ui.setStatus("antigravity-quota", formatQuotaStatusText(results));
+			}
+		}
 	});
 
 	// Tool: antigravity_quota
 	pi.registerTool({
 		name: "antigravity_quota",
-		label: "Antigravity Quota",
+		label: "Antigravity Usage",
 		description:
 			"Check Antigravity / Google Cloud Code Assist model quota and local rate limits for all configured accounts",
 		promptSnippet: "Check Antigravity model quota and rate limits across Google accounts",
@@ -1186,7 +1222,7 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 		parameters: Type.Object({}),
 		async execute(_toolCallId, _params, _signal, onUpdate) {
 			onUpdate?.({
-				content: [{ type: "text", text: "Fetching Antigravity quota..." }],
+				content: [{ type: "text", text: "Fetching Antigravity usage..." }],
 				details: {},
 			});
 			const { results, accounts } = await refreshCachedQuota();
@@ -1268,19 +1304,19 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 		if (subcmd === "status" || subcmd === "toggle-status") {
 			isStatusActive = !isStatusActive;
 			if (isStatusActive && ctx.hasUI) {
-				ctx.ui.notify("Enabling footer quota status...", "info");
+				ctx.ui.notify("Enabling footer usage status...", "info");
 				const { results } = await refreshCachedQuota();
 				ctx.ui.setStatus("antigravity-quota", formatQuotaStatusText(results));
-				ctx.ui.notify("Quota status enabled in footer.", "info");
+				ctx.ui.notify("Usage status enabled in footer.", "info");
 			} else if (ctx.hasUI) {
 				ctx.ui.setStatus("antigravity-quota", undefined);
-				ctx.ui.notify("Quota status removed from footer.", "info");
+				ctx.ui.notify("Usage status removed from footer.", "info");
 			}
 			return;
 		}
 
 		if (subcmd === "report" || subcmd === "full" || subcmd === "table") {
-			ctx.ui.notify("Fetching full Antigravity quota report...", "info");
+			ctx.ui.notify("Fetching full Antigravity usage report...", "info");
 			const { results, accounts } = await refreshCachedQuota();
 			if (accounts.length === 0) {
 				ctx.ui.notify(
@@ -1292,7 +1328,7 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 
 			const report = formatQuotaReport(results, accounts);
 			if (ctx.hasUI) {
-				await ctx.ui.editor("Antigravity Quota Status", report);
+				await ctx.ui.editor("Antigravity Usage Status", report);
 			} else {
 				ctx.ui.notify(report, "info");
 			}
@@ -1302,12 +1338,12 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 		// Default behavior: check/refresh quota in sidebar
 		if (ctx.hasUI && !isSidebarTuiAvailable()) {
 			ctx.ui.notify(
-				"Antigravity Quota requires pi-sidebar-tui to display quota in the sidebar. Run `pi install /path/to/pi-sidebar-tui` to install it.",
+				"Antigravity Usage requires pi-sidebar-tui to display usage in the sidebar. Run `pi install /path/to/pi-sidebar-tui` to install it.",
 				"warning",
 			);
 		}
 
-		ctx.ui.notify("Refreshing Antigravity quota in sidebar...", "info");
+		ctx.ui.notify("Refreshing Antigravity usage in sidebar...", "info");
 		const { accounts } = await refreshCachedQuota();
 		if (accounts.length === 0) {
 			ctx.ui.notify(
@@ -1319,17 +1355,17 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 
 		notifySidebarRender();
 		if (ctx.hasUI) {
-			ctx.ui.notify("Quota refreshed in sidebar. Run `/quota report` for full breakdown table.", "info");
+			ctx.ui.notify("Usage refreshed in sidebar. Run `/quota report` for full breakdown table.", "info");
 		}
 	};
 
 	pi.registerCommand("quota", {
-		description: "Check Antigravity API quotas in sidebar. Subcommands: 'report' (full table), 'status' (footer)",
+		description: "Check Antigravity API usage in sidebar. Subcommands: 'report' (full table), 'status' (footer)",
 		handler: quotaCommandHandler,
 	});
 
 	pi.registerCommand("antigravity-quota", {
-		description: "Check Antigravity API quotas in sidebar. Subcommands: 'report' (full table), 'status' (footer)",
+		description: "Check Antigravity API usage in sidebar. Subcommands: 'report' (full table), 'status' (footer)",
 		handler: quotaCommandHandler,
 	});
 

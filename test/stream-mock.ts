@@ -267,6 +267,79 @@ check("thinking signature retained", done?.message?.content?.[0]?.thinkingSignat
 		modernEvents.some((e) => e.type === "done"));
 }
 
+// --- Test 3: Model streaming coverage for all required models
+{
+	const modelsToTest: Array<{
+		id: string;
+		reasoning?: string;
+		expectedModel: string;
+		expectedThinkingLevel?: string | number;
+		expectedThinkingBudget?: number;
+		expectedMaxTokens?: number;
+	}> = [
+		{ id: "gemini-4-argon", reasoning: "low", expectedModel: "gemini-4-argon-low", expectedThinkingLevel: "LOW", expectedMaxTokens: 65536 },
+		{ id: "gemini-4-argon", reasoning: "medium", expectedModel: "gemini-4-argon-medium", expectedThinkingLevel: "MEDIUM", expectedMaxTokens: 65536 },
+		{ id: "gemini-4-argon", reasoning: "high", expectedModel: "gemini-4-argon-high", expectedThinkingLevel: "HIGH", expectedMaxTokens: 65536 },
+		{ id: "gemini-4-hydrogen", reasoning: "low", expectedModel: "gemini-4-hydrogen-low", expectedThinkingLevel: "LOW", expectedMaxTokens: 262144 },
+		{ id: "gemini-4-hydrogen", reasoning: "medium", expectedModel: "gemini-4-hydrogen-medium", expectedThinkingLevel: "MEDIUM", expectedMaxTokens: 262144 },
+		{ id: "gemini-4-hydrogen", reasoning: "high", expectedModel: "gemini-4-hydrogen-high", expectedThinkingLevel: "HIGH", expectedMaxTokens: 262144 },
+		{ id: "gemini-4-hydrogen", reasoning: "extra", expectedModel: "gemini-4-hydrogen-xhigh", expectedThinkingLevel: 100, expectedMaxTokens: 262144 },
+		{ id: "gemini-3.8-flash", reasoning: "low", expectedModel: "gemini-3.8-flash-low", expectedThinkingLevel: "LOW", expectedMaxTokens: 65536 },
+		{ id: "gemini-3.8-flash", reasoning: "medium", expectedModel: "gemini-3.8-flash-medium", expectedThinkingLevel: "MEDIUM", expectedMaxTokens: 65536 },
+		{ id: "gemini-3.8-flash", reasoning: "high", expectedModel: "gemini-3.8-flash-high", expectedThinkingLevel: "HIGH", expectedMaxTokens: 65536 },
+		{ id: "claude-opus-5-5-thinking", reasoning: "low", expectedModel: "claude-opus-5-5-low", expectedThinkingLevel: "LOW", expectedMaxTokens: 128000 },
+		{ id: "claude-opus-5-5-thinking", reasoning: "medium", expectedModel: "claude-opus-5-5-medium", expectedThinkingLevel: "MEDIUM", expectedMaxTokens: 128000 },
+		{ id: "claude-opus-5-5-thinking", reasoning: "high", expectedModel: "claude-opus-5-5-high", expectedThinkingLevel: "HIGH", expectedMaxTokens: 128000 },
+		{ id: "claude-sonnet-5-5", reasoning: "low", expectedModel: "claude-sonnet-5-5-low", expectedThinkingLevel: "LOW", expectedMaxTokens: 128000 },
+		{ id: "claude-sonnet-5-5", reasoning: "medium", expectedModel: "claude-sonnet-5-5-medium", expectedThinkingLevel: "MEDIUM", expectedMaxTokens: 128000 },
+		{ id: "claude-sonnet-5-5", reasoning: "high", expectedModel: "claude-sonnet-5-5-high", expectedThinkingLevel: "HIGH", expectedMaxTokens: 128000 },
+		{ id: "gpt-oss-120b", reasoning: undefined, expectedModel: "gpt-oss-120b-medium", expectedThinkingBudget: 8192, expectedMaxTokens: 32768 },
+	];
+
+	const baseContext = {
+		messages: [{ role: "user", content: "hello" }],
+	} as never;
+
+	for (const t of modelsToTest) {
+		const testModel = {
+			id: t.id,
+			name: t.id,
+			api: ANTIGRAVITY_API_ID,
+			provider: "antigravity",
+			baseUrl: "https://daily-cloudcode-pa.sandbox.googleapis.com",
+			reasoning: t.id !== "gpt-oss-120b",
+			input: ["text", "image"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 1000000,
+			maxTokens: t.expectedMaxTokens ?? 65536,
+		} as never;
+
+		const testStream = streamAntigravity(testModel, baseContext, t.reasoning ? { reasoning: t.reasoning } : undefined);
+		for await (const _ of testStream) {
+			// consume
+		}
+
+		const req = requests[requests.length - 1];
+		const body = req?.body as any;
+		const inner = body?.request;
+		const label = `${t.id} (${t.reasoning ?? "default"})`;
+
+		check(`${label} routed to backend ${t.expectedModel}`, body?.model === t.expectedModel, body?.model);
+		if (t.expectedThinkingLevel !== undefined) {
+			const actualLevel = inner?.generationConfig?.thinkingConfig?.thinkingLevel;
+			check(`${label} thinkingLevel is ${t.expectedThinkingLevel}`, actualLevel === t.expectedThinkingLevel, actualLevel);
+		}
+		if (t.expectedThinkingBudget !== undefined) {
+			const actualBudget = inner?.generationConfig?.thinkingConfig?.thinkingBudget;
+			check(`${label} thinkingBudget is ${t.expectedThinkingBudget}`, actualBudget === t.expectedThinkingBudget, actualBudget);
+		}
+		if (t.expectedMaxTokens !== undefined) {
+			const actualMax = inner?.generationConfig?.maxOutputTokens;
+			check(`${label} maxOutputTokens is ${t.expectedMaxTokens}`, actualMax === t.expectedMaxTokens, actualMax);
+		}
+	}
+}
+
 server.close();
 console.log(failures === 0 ? "\nStream mock test passed." : `\n${failures} check(s) FAILED.`);
 process.exit(failures === 0 ? 0 : 1);

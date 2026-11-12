@@ -57,7 +57,9 @@ export function requiresToolCallId(modelId: string): boolean {
 }
 
 function getGeminiMajorVersion(modelId: string): number | undefined {
-	const match = modelId.toLowerCase().match(/^gemini(?:-live)?-(\d+)/);
+	const lower = modelId.toLowerCase();
+	if (lower.includes("argon") || lower.includes("hydrogen")) return 4;
+	const match = lower.match(/^gemini(?:-live)?-(\d+)/);
 	if (!match) return undefined;
 	return Number.parseInt(match[1]!, 10);
 }

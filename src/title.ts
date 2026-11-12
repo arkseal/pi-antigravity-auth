@@ -45,20 +45,25 @@ export async function generateConversationTitle(userText: string): Promise<strin
 				},
 				body: JSON.stringify({
 					project: account.projectId || ANTIGRAVITY_DEFAULT_PROJECT_ID,
-					requestId: `title-${Date.now()}`,
+					requestId: `checkpoint/${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`,
 					model: "gemini-3.5-flash-lite",
 					request: {
 						contents: [{ role: "user", parts: [{ text: truncated }] }],
 						systemInstruction: {
+							role: "user",
 							parts: [{ text: ANTIGRAVITY_TITLE_SYSTEM_INSTRUCTION }],
 						},
 						generationConfig: {
+							thinkingConfig: {
+								includeThoughts: true,
+								thinkingLevel: "LOW",
+							},
 							maxOutputTokens: 50,
 							temperature: 0.2,
 						},
 					},
 					userAgent: "antigravity",
-					requestType: "agent",
+					requestType: "checkpoint",
 				}),
 			},
 		);
