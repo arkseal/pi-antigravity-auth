@@ -120,7 +120,7 @@ export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
 			medium: "medium",
 			high: "high",
 			xhigh: "extra",
-			max: "extra",
+			max: null,
 		},
 	},
 	{
