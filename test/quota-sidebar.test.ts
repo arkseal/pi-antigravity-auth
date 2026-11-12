@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { _resetAccountManagerForTesting } from "../src/accounts.js";
 import {
 	renderQuotaSidebarPanel,
 	isSidebarTuiAvailable,
@@ -316,7 +320,7 @@ test("renderQuotaSidebarPanel renders separate Gemini 4 Argon quota", () => {
 	assert.ok(text.includes("98%"), "Expected 98% bar for Argon");
 });
 
-test("registerQuotaFeature only refreshes quota for antigravity models", async () => {
+test("registerQuotaFeature fetches once on session_start regardless of model, then only refreshes for antigravity models", async () => {
 	const events = new Map<string, (...args: any[]) => any>();
 	const commands = new Map<string, any>();
 	const tools = new Map<string, any>();
@@ -331,12 +335,77 @@ test("registerQuotaFeature only refreshes quota for antigravity models", async (
 		getAllTools: () => [{ name: "antigravity_search" }, { name: "web_search" }],
 	};
 
+	const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
+	const originalHome = process.env.HOME;
+	const tempDir = mkdtempSync(join(tmpdir(), "pi-antigravity-quota-test-"));
+	process.env.PI_CODING_AGENT_DIR = tempDir;
+	process.env.HOME = tempDir;
+	_resetAccountManagerForTesting();
+
+	writeFileSync(
+		join(tempDir, "antigravity-accounts.json"),
+		JSON.stringify({
+			version: 4,
+			activeIndex: 0,
+			accounts: [
+				{
+					email: "test@example.com",
+					refreshToken: "1//test-refresh-token",
+					projectId: "test-project",
+					addedAt: Date.now(),
+					lastUsed: Date.now(),
+					enabled: true,
+					rateLimitResetTimes: {},
+				},
+			],
+		}),
+	);
+	writeFileSync(
+		join(tempDir, "auth.json"),
+		JSON.stringify({
+			antigravity: {
+				type: "oauth",
+				refresh: "1//test-refresh-token|test-project",
+				access: "ya29.test-access-token",
+				expires: Date.now() + 3_600_000,
+				email: "test@example.com",
+			},
+		}),
+	);
+
 	let refreshCalls = 0;
 	const originalFetch = globalThis.fetch;
 	globalThis.fetch = (async (url: any) => {
-		if (String(url).includes("retrieveUserQuotaSummary") || String(url).includes("fetchAvailableModels")) {
+		const urlStr = String(url);
+		if (urlStr.includes("retrieveUserQuotaSummary")) {
 			refreshCalls++;
-			return new Response(JSON.stringify({ groups: [] }), { status: 200 });
+			return new Response(
+				JSON.stringify({
+					groups: [
+						{
+							displayName: "Gemini Models",
+							buckets: [{ bucketId: "gemini-weekly", displayName: "Weekly Limit", remainingFraction: 0.8 }],
+						},
+						{
+							displayName: "Claude and GPT models",
+							buckets: [{ bucketId: "3p-weekly", displayName: "Weekly Limit", remainingFraction: 0.9 }],
+						},
+					],
+				}),
+				{ status: 200 },
+			);
+		}
+		if (urlStr.includes("fetchAvailableModels")) {
+			return new Response(
+				JSON.stringify({
+					models: {
+						"gemini-3.8-flash-tiered": {
+							quotaInfo: { remainingFraction: 0.85 },
+						},
+					},
+				}),
+				{ status: 200 },
+			);
 		}
 		return originalFetch(url);
 	}) as typeof fetch;
@@ -355,18 +424,42 @@ test("registerQuotaFeature only refreshes quota for antigravity models", async (
 			},
 		};
 
-		// 1. session_start with non-antigravity model -> should NOT fetch quota
+		// 1. session_start with non-antigravity model -> SHOULD fetch initial quota once
 		await events.get("session_start")!({}, fakeCtx);
-		assert.equal(refreshCalls, 0, "session_start on non-antigravity model must not refresh quota");
+		assert.equal(refreshCalls, 1, "session_start must fetch initial quota even on non-antigravity model");
 
 		// 2. turn_end with non-antigravity model -> should NOT fetch quota
 		await events.get("turn_end")!({}, fakeCtx);
-		assert.equal(refreshCalls, 0, "turn_end on non-antigravity model must not refresh quota");
+		assert.equal(refreshCalls, 1, "turn_end on non-antigravity model must not refresh quota");
 
 		// 3. model_select to non-antigravity model -> should NOT fetch quota
+		await events.get("model_select")!({ model: { provider: "anthropic" } }, fakeCtx);
+		assert.equal(refreshCalls, 1, "model_select to non-antigravity model must not refresh quota");
+
+		// 4. model_select to antigravity model -> SHOULD fetch quota
+		fakeCtx.model = { provider: "antigravity" };
+		await events.get("model_select")!({ model: { provider: "antigravity" } }, fakeCtx);
+		assert.equal(refreshCalls, 2, "model_select to antigravity model must refresh quota");
+
+		// 5. turn_end with antigravity model -> SHOULD fetch quota
+		await events.get("turn_end")!({}, fakeCtx);
+		assert.equal(refreshCalls, 3, "turn_end on antigravity model must refresh quota");
+
+		// 6. model_select back to non-antigravity model -> should NOT fetch quota
+		fakeCtx.model = { provider: "openai" };
 		await events.get("model_select")!({ model: { provider: "openai" } }, fakeCtx);
-		assert.equal(refreshCalls, 0, "model_select on non-antigravity model must not refresh quota");
+		assert.equal(refreshCalls, 3, "model_select back to non-antigravity model must not refresh quota");
+
+		// 7. subsequent turn_end with non-antigravity model -> should NOT fetch quota
+		await events.get("turn_end")!({}, fakeCtx);
+		assert.equal(refreshCalls, 3, "turn_end after switching away from antigravity must not refresh quota");
 	} finally {
 		globalThis.fetch = originalFetch;
+		_resetAccountManagerForTesting();
+		if (originalAgentDir === undefined) delete process.env.PI_CODING_AGENT_DIR;
+		else process.env.PI_CODING_AGENT_DIR = originalAgentDir;
+		if (originalHome === undefined) delete process.env.HOME;
+		else process.env.HOME = originalHome;
+		rmSync(tempDir, { recursive: true, force: true });
 	}
 });

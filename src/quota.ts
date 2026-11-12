@@ -1171,12 +1171,10 @@ export function registerQuotaFeature(pi: ExtensionAPI, _providerId = ANTIGRAVITY
 			const manager = await getAccountManager();
 			cachedAccounts = manager.getAccounts();
 			notifySidebarRender();
-			if (isAntigravity) {
-				const { results } = await refreshCachedQuota();
-				notifySidebarRender();
-				if (isStatusActive) {
-					ctx.ui.setStatus("antigravity-quota", formatQuotaStatusText(results));
-				}
+			const { results } = await refreshCachedQuota();
+			notifySidebarRender();
+			if (isStatusActive) {
+				ctx.ui.setStatus("antigravity-quota", formatQuotaStatusText(results));
 			}
 		}
 	});

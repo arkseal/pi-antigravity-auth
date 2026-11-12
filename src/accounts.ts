@@ -524,6 +524,10 @@ export async function getAccountManager(): Promise<AccountManager> {
 	return globalAccountManager;
 }
 
+export function _resetAccountManagerForTesting(): void {
+	globalAccountManager = null;
+}
+
 // ---------------------------------------------------------------------------
 // Compatibility helpers
 // ---------------------------------------------------------------------------
